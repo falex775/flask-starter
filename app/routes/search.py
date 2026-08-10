@@ -17,7 +17,7 @@ search_bp = Blueprint(
 @search_bp.get("")
 @jwt_required()
 def search():
-    uid = get_jwt_identity()
+    uid = int(get_jwt_identity())
     q = request.args.get("q", "").strip()
 
     if not q:
