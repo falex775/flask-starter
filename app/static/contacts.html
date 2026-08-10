@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contacts - MyCRM</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="navbar"></div>
+    <div class="container">
+        <div class="page-header">
+            <h1>Contacts</h1>
+            <a href="contact_form.html" class="btn-primary">+ Add Contact</a>
+        </div>
+        <div class="card">
+            <div class="card-header" style="gap:12px">
+                <input type="text" id="searchInput" placeholder="Search contacts..." style="padding:8px 14px;border:1px solid var(--border);border-radius:8px;flex:1;max-width:320px">
+                <button class="btn-secondary btn-sm" onclick="loadContacts()">Search</button>
+            </div>
+            <div class="card-body">
+                <table class="table" id="contactsTable">
+                    <thead>
+                        <tr><th>Name</th><th>Email</th><th>Phone</th><th>Company</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody id="contactsBody">
+                        <tr><td colspan="5" class="empty-state">Loading...</td></tr>
+                    </tbody>
+                </table>
+                <div class="pagination" id="pagination"></div>
+            </div>
+        </div>
+    </div>
+    <script src="js/app.js"></script>
+    <script>
+        if (!Auth.guard()) {}
+        renderNavbar('contacts');
+
+        let currentPage = 1;
+        const perPage = 20;
+
+        async function loadContacts(page = 1) {
+            currentPage = page;
+            showLoading(true);
+            const q = document.getElementById('searchInput').value.trim();
+            const url = `/api/contacts?page=${page}&per_page=${perPage}${q ? '&q=' + encodeURIComponent(q) : ''}`;
+            try {
+                const data = await api(url);
+                renderContacts(data.items || []);
+                renderPagination(data.page, data.pages, data.total);
+            } catch (e) {
+                document.getElementById('contactsBody').innerHTML = '<tr><td colspan="5" class="empty-state">Failed to load contacts</td></tr>';
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function renderContacts(contacts) {
+            const tbody = document.getElementById('contactsBody');
+            if (!contacts.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No contacts found</td></tr>';
+                return;
+            }
+            tbody.innerHTML = contacts.map(c => `
+                <tr>
+                    <td><strong>${c.name}</strong></td>
+                    <td>${c.email || '-'}</td>
+                    <td>${c.phone || '-'}</td>
+                    <td>${c.company || '-'}</td>
+                    <td>
+                        <a href="contact_form.html?id=${c.id}" class="btn-secondary btn-sm" style="margin-right:6px">Edit</a>
+                        <button class="btn-danger btn-sm" onclick="deleteContact(${c.id}, '${c.name.replace(/'/g, "\\'")}')">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderPagination(page, pages, total) {
+            const el = document.getElementById('pagination');
+            if (pages <= 1) { el.innerHTML = ''; return; }
+            let html = `<button ${page === 1 ? 'disabled' : ''} onclick="loadContacts(${page - 1})">Prev</button>`;
+            for (let i = 1; i <= pages; i++) {
+                if (i === 1 || i === pages || (i >= page - 1 && i <= page + 1)) {
+                    html += `<button class="${i === page ? 'active' : ''}" onclick="loadContacts(${i})">${i}</button>`;
+                } else if (i === page - 2 || i === page + 2) {
+                    html += `<span style="padding:6px">...</span>`;
+                }
+            }
+            html += `<button ${page === pages ? 'disabled' : ''} onclick="loadContacts(${page + 1})">Next</button>`;
+            el.innerHTML = html;
+        }
+
+        function deleteContact(id, name) {
+            confirmDelete(`Delete contact "${name}"?`, async () => {
+                showLoading(true);
+                try {
+                    await api(`/api/contacts/${id}`, { method: 'DELETE' });
+                    showToast('Contact deleted', 'success');
+                    loadContacts(currentPage);
+                } catch (e) {
+                    showLoading(false);
+                }
+            });
+        }
+
+        document.getElementById('searchInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') loadContacts(1);
+        });
+
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('q')) {
+            document.getElementById('searchInput').value = urlParams.get('q');
+        }
+
+        loadContacts();
+    </script>
+</body>
+</html>

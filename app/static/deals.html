@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deals - MyCRM</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="navbar"></div>
+    <div class="container">
+        <div class="page-header">
+            <h1>Deals</h1>
+            <a href="deal_form.html" class="btn-primary">+ Add Deal</a>
+        </div>
+        <div class="card">
+            <div class="card-header" style="gap:12px">
+                <select id="statusFilter" style="padding:8px 14px;border:1px solid var(--border);border-radius:8px">
+                    <option value="">All Statuses</option>
+                    <option value="Open">Open</option>
+                    <option value="Won">Won</option>
+                    <option value="Lost">Lost</option>
+                </select>
+                <button class="btn-secondary btn-sm" onclick="loadDeals()">Filter</button>
+            </div>
+            <div class="card-body">
+                <table class="table" id="dealsTable">
+                    <thead>
+                        <tr><th>Title</th><th>Value</th><th>Status</th><th>Contact</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody id="dealsBody">
+                        <tr><td colspan="5" class="empty-state">Loading...</td></tr>
+                    </tbody>
+                </table>
+                <div class="pagination" id="pagination"></div>
+            </div>
+        </div>
+    </div>
+    <script src="js/app.js"></script>
+    <script>
+        if (!Auth.guard()) {}
+        renderNavbar('deals');
+
+        let currentPage = 1;
+        const perPage = 20;
+        let contactsMap = {};
+
+        async function loadContactsMap() {
+            try {
+                const data = await api('/api/contacts?per_page=1000');
+                (data.items || []).forEach(c => contactsMap[c.id] = c.name);
+            } catch (e) {}
+        }
+
+        async function loadDeals(page = 1) {
+            currentPage = page;
+            showLoading(true);
+            const status = document.getElementById('statusFilter').value;
+            let url = `/api/deals?page=${page}&per_page=${perPage}`;
+            if (status) url += `&status=${encodeURIComponent(status)}`;
+            try {
+                const data = await api(url);
+                renderDeals(data.items || []);
+                renderPagination(data.page, data.pages, data.total);
+            } catch (e) {
+                document.getElementById('dealsBody').innerHTML = '<tr><td colspan="5" class="empty-state">Failed to load deals</td></tr>';
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function renderDeals(deals) {
+            const tbody = document.getElementById('dealsBody');
+            if (!deals.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No deals found</td></tr>';
+                return;
+            }
+            tbody.innerHTML = deals.map(d => `
+                <tr>
+                    <td><strong>${d.title}</strong></td>
+                    <td>${formatCurrency(d.value)}</td>
+                    <td><span class="badge ${statusBadge(d.status)}">${d.status}</span></td>
+                    <td>${contactsMap[d.contact_id] || '-'}</td>
+                    <td>
+                        <a href="deal_form.html?id=${d.id}" class="btn-secondary btn-sm" style="margin-right:6px">Edit</a>
+                        <button class="btn-danger btn-sm" onclick="deleteDeal(${d.id}, '${d.title.replace(/'/g, "\\'")}')">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderPagination(page, pages, total) {
+            const el = document.getElementById('pagination');
+            if (pages <= 1) { el.innerHTML = ''; return; }
+            let html = `<button ${page === 1 ? 'disabled' : ''} onclick="loadDeals(${page - 1})">Prev</button>`;
+            for (let i = 1; i <= pages; i++) {
+                if (i === 1 || i === pages || (i >= page - 1 && i <= page + 1)) {
+                    html += `<button class="${i === page ? 'active' : ''}" onclick="loadDeals(${i})">${i}</button>`;
+                } else if (i === page - 2 || i === page + 2) {
+                    html += `<span style="padding:6px">...</span>`;
+                }
+            }
+            html += `<button ${page === pages ? 'disabled' : ''} onclick="loadDeals(${page + 1})">Next</button>`;
+            el.innerHTML = html;
+        }
+
+        function deleteDeal(id, title) {
+            confirmDelete(`Delete deal "${title}"?`, async () => {
+                showLoading(true);
+                try {
+                    await api(`/api/deals/${id}`, { method: 'DELETE' });
+                    showToast('Deal deleted', 'success');
+                    loadDeals(currentPage);
+                } catch (e) { showLoading(false); }
+            });
+        }
+
+        loadContactsMap().then(() => loadDeals());
+    </script>
+</body>
+</html>
+

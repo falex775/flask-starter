@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Activity - MyCRM</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="navbar"></div>
+    <div class="container">
+        <div class="page-header">
+            <h1 id="pageTitle">Add Activity</h1>
+        </div>
+        <div class="card form-page" style="padding:32px">
+            <form id="activityForm">
+                <div class="form-group">
+                    <label>Type *</label>
+                    <select id="kind" required>
+                        <option value="Call">Call</option>
+                        <option value="Email">Email</option>
+                        <option value="Task">Task</option>
+                        <option value="Meeting">Meeting</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Date & Time *</label>
+                    <input type="datetime-local" id="happened_at" required>
+                </div>
+                <div class="form-group">
+                    <label>Contact</label>
+                    <select id="contact_id">
+                        <option value="">-- Select Contact --</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Deal</label>
+                    <select id="deal_id">
+                        <option value="">-- Select Deal --</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Notes</label>
+                    <textarea id="notes" placeholder="What happened?"></textarea>
+                </div>
+                <div class="form-actions">
+                    <a href="activities.html" class="btn-secondary">Cancel</a>
+                    <button type="submit" class="btn-primary">Save Activity</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script src="js/app.js"></script>
+    <script>
+        if (!Auth.guard()) {}
+        renderNavbar('activities');
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const activityId = urlParams.get('id');
+        const isEdit = !!activityId;
+
+        document.getElementById('pageTitle').textContent = isEdit ? 'Edit Activity' : 'Add Activity';
+
+        async function loadOptions() {
+            try {
+                const [cData, dData] = await Promise.all([
+                    api('/api/contacts?per_page=1000'),
+                    api('/api/deals?per_page=1000')
+                ]);
+                const cSelect = document.getElementById('contact_id');
+                (cData.items || []).forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id; opt.textContent = c.name;
+                    cSelect.appendChild(opt);
+                });
+                const dSelect = document.getElementById('deal_id');
+                (dData.items || []).forEach(d => {
+                    const opt = document.createElement('option');
+                    opt.value = d.id; opt.textContent = d.title;
+                    dSelect.appendChild(opt);
+                });
+            } catch (e) {}
+        }
+
+        async function loadActivity() {
+            if (!isEdit) return;
+            showLoading(true);
+            try {
+                const a = await api(`/api/activities/${activityId}`);
+                document.getElementById('kind').value = a.kind || 'Call';
+                document.getElementById('notes').value = a.notes || '';
+                document.getElementById('contact_id').value = a.contact_id || '';
+                document.getElementById('deal_id').value = a.deal_id || '';
+                if (a.happened_at) {
+                    const d = new Date(a.happened_at);
+                    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+                    document.getElementById('happened_at').value = d.toISOString().slice(0, 16);
+                }
+            } catch (e) {} finally { showLoading(false); }
+        }
+
+        document.getElementById('activityForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            showLoading(true);
+            const body = {
+                kind: document.getElementById('kind').value,
+                happened_at: new Date(document.getElementById('happened_at').value).toISOString(),
+                contact_id: document.getElementById('contact_id').value || null,
+                deal_id: document.getElementById('deal_id').value || null,
+                notes: document.getElementById('notes').value || null
+            };
+            try {
+                if (isEdit) {
+                    await api(`/api/activities/${activityId}`, { method: 'PUT', body });
+                    showToast('Activity updated', 'success');
+                } else {
+                    await api('/api/activities', { method: 'POST', body });
+                    showToast('Activity created', 'success');
+                }
+                setTimeout(() => window.location.href = 'activities.html', 600);
+            } catch (e) { showLoading(false); }
+        });
+
+        loadOptions().then(() => loadActivity());
+    </script>
+</body>
+</html>

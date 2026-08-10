@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Activities - MyCRM</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="navbar"></div>
+    <div class="container">
+        <div class="page-header">
+            <h1>Activities</h1>
+            <a href="activity_form.html" class="btn-primary">+ Add Activity</a>
+        </div>
+        <div class="card">
+            <div class="card-header" style="gap:12px">
+                <select id="kindFilter" style="padding:8px 14px;border:1px solid var(--border);border-radius:8px">
+                    <option value="">All Types</option>
+                    <option value="Call">Call</option>
+                    <option value="Email">Email</option>
+                    <option value="Task">Task</option>
+                    <option value="Meeting">Meeting</option>
+                </select>
+                <button class="btn-secondary btn-sm" onclick="loadActivities()">Filter</button>
+            </div>
+            <div class="card-body">
+                <table class="table" id="activitiesTable">
+                    <thead>
+                        <tr><th>Type</th><th>Notes</th><th>Contact</th><th>Deal</th><th>Date</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody id="activitiesBody">
+                        <tr><td colspan="6" class="empty-state">Loading...</td></tr>
+                    </tbody>
+                </table>
+                <div class="pagination" id="pagination"></div>
+            </div>
+        </div>
+    </div>
+    <script src="js/app.js"></script>
+    <script>
+        if (!Auth.guard()) {}
+        renderNavbar('activities');
+
+        let currentPage = 1;
+        const perPage = 20;
+        let contactsMap = {};
+        let dealsMap = {};
+
+        async function loadMaps() {
+            try {
+                const [cData, dData] = await Promise.all([
+                    api('/api/contacts?per_page=1000'),
+                    api('/api/deals?per_page=1000')
+                ]);
+                (cData.items || []).forEach(c => contactsMap[c.id] = c.name);
+                (dData.items || []).forEach(d => dealsMap[d.id] = d.title);
+            } catch (e) {}
+        }
+
+        async function loadActivities(page = 1) {
+            currentPage = page;
+            showLoading(true);
+            const kind = document.getElementById('kindFilter').value;
+            let url = `/api/activities?page=${page}&per_page=${perPage}`;
+            try {
+                const data = await api(url);
+                let items = data || [];
+                if (kind) items = items.filter(a => a.kind === kind);
+                renderActivities(items);
+                // Simple client-side pagination for activities since API doesn't paginate list
+                const total = items.length;
+                const pages = Math.ceil(total / perPage) || 1;
+                renderPagination(page, pages, total);
+            } catch (e) {
+                document.getElementById('activitiesBody').innerHTML = '<tr><td colspan="6" class="empty-state">Failed to load activities</td></tr>';
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function renderActivities(activities) {
+            const tbody = document.getElementById('activitiesBody');
+            if (!activities.length) {
+                tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No activities found</td></tr>';
+                return;
+            }
+            tbody.innerHTML = activities.map(a => `
+                <tr>
+                    <td><span class="badge ${a.kind === 'Call' ? 'info' : a.kind === 'Email' ? 'warning' : a.kind === 'Task' ? 'neutral' : 'success'}">${a.kind}</span></td>
+                    <td>${a.notes || '-'}</td>
+                    <td>${contactsMap[a.contact_id] || '-'}</td>
+                    <td>${dealsMap[a.deal_id] || '-'}</td>
+                    <td>${formatDateTime(a.happened_at)}</td>
+                    <td>
+                        <a href="activity_form.html?id=${a.id}" class="btn-secondary btn-sm" style="margin-right:6px">Edit</a>
+                        <button class="btn-danger btn-sm" onclick="deleteActivity(${a.id})">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderPagination(page, pages, total) {
+            const el = document.getElementById('pagination');
+            if (pages <= 1) { el.innerHTML = ''; return; }
+            let html = `<button ${page === 1 ? 'disabled' : ''} onclick="loadActivities(${page - 1})">Prev</button>`;
+            for (let i = 1; i <= pages; i++) {
+                if (i === 1 || i === pages || (i >= page - 1 && i <= page + 1)) {
+                    html += `<button class="${i === page ? 'active' : ''}" onclick="loadActivities(${i})">${i}</button>`;
+                } else if (i === page - 2 || i === page + 2) {
+                    html += `<span style="padding:6px">...</span>`;
+                }
+            }
+            html += `<button ${page === pages ? 'disabled' : ''} onclick="loadActivities(${page + 1})">Next</button>`;
+            el.innerHTML = html;
+        }
+
+        function deleteActivity(id) {
+            confirmDelete('Delete this activity?', async () => {
+                showLoading(true);
+                try {
+                    await api(`/api/activities/${id}`, { method: 'DELETE' });
+                    showToast('Activity deleted', 'success');
+                    loadActivities(currentPage);
+                } catch (e) { showLoading(false); }
+            });
+        }
+
+        loadMaps().then(() => loadActivities());
+    </script>
+</body>
+</html>

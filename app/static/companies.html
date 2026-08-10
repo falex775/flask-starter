@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Companies - MyCRM</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="navbar"></div>
+    <div class="container">
+        <div class="page-header">
+            <h1>Companies</h1>
+        </div>
+        <div class="card">
+            <div class="card-body" id="companiesList">
+                <div class="empty-state">Loading...</div>
+            </div>
+        </div>
+    </div>
+    <script src="js/app.js"></script>
+    <script>
+        if (!Auth.guard()) {}
+        renderNavbar('companies');
+
+        async function loadCompanies() {
+            showLoading(true);
+            try {
+                const data = await api('/api/contacts?per_page=1000');
+                const contacts = data.items || [];
+                const map = {};
+                contacts.forEach(c => {
+                    if (!c.company) return;
+                    if (!map[c.company]) map[c.company] = [];
+                    map[c.company].push(c);
+                });
+                const companies = Object.keys(map).sort();
+                const container = document.getElementById('companiesList');
+                if (!companies.length) {
+                    container.innerHTML = '<div class="empty-state">No companies found</div>';
+                    return;
+                }
+                container.innerHTML = companies.map(comp => `
+                    <div class="list-item" style="cursor:default">
+                        <div class="avatar purple">${comp.slice(0,2).toUpperCase()}</div>
+                        <div class="list-content">
+                            <h4>${comp}</h4>
+                            <p>${map[comp].length} contact(s)</p>
+                        </div>
+                        <span class="badge badge-info">${map[comp][0].email || 'No email'}</span>
+                    </div>
+                `).join('');
+            } catch (e) {
+                document.getElementById('companiesList').innerHTML = '<div class="empty-state">Failed to load companies</div>';
+            } finally {
+                showLoading(false);
+            }
+        }
+        loadCompanies();
+    </script>
+</body>
+</html>

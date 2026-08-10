@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - MyCRM</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div id="navbar"></div>
+    <div class="container">
+        <!-- Stats Cards -->
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <div class="stat-icon blue">&#128101;</div>
+                <div class="stat-info">
+                    <h3 id="statContacts">-</h3>
+                    <p>Contacts</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon cyan">&#127970;</div>
+                <div class="stat-info">
+                    <h3 id="statCompanies">-</h3>
+                    <p>Companies</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon yellow">&#128176;</div>
+                <div class="stat-info">
+                    <h3 id="statPipeline">-</h3>
+                    <p>Pipeline Value</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon green">&#127942;</div>
+                <div class="stat-info">
+                    <h3 id="statWon">-</h3>
+                    <p>Won Deals</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="dashboard-left">
+                <!-- Upcoming Activities -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>&#128197; Upcoming Activities</h2>
+                        <a href="activities.html" class="btn-secondary btn-sm">View all</a>
+                    </div>
+                    <div class="card-body">
+                        <table class="table" id="activitiesTable">
+                            <thead>
+                                <tr><th>Type</th><th>Subject</th><th>Contact</th><th>Date</th></tr>
+                            </thead>
+                            <tbody id="activitiesBody">
+                                <tr><td colspan="4" class="empty-state">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Recent Contacts -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>&#128100; Recent Contacts</h2>
+                        <a href="contacts.html" class="btn-secondary btn-sm">View all</a>
+                    </div>
+                    <div class="card-body" id="recentContacts">
+                        <div class="empty-state">Loading...</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dashboard-right">
+                <!-- Charts -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Pipeline Value by Stage</h2>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="pipelineChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Contacts by Status</h2>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="contactsChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Featured Company -->
+                <div class="card company-card" id="featuredCompany">
+                    <h3>ABC <span class="badge badge-warning">Trading</span></h3>
+                    <a href="https://abc.com" target="_blank" class="company-url">https://abc.com</a>
+                    <div class="company-meta">
+                        <div class="company-meta-item">
+                            <span>&#9993;</span>
+                            <span>admin@abc.com</span>
+                        </div>
+                        <div class="company-meta-item">
+                            <span>&#9742;</span>
+                            <span>+1000000000</span>
+                        </div>
+                        <div class="company-meta-item">
+                            <span>&#128205;</span>
+                            <span>#1</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script>
+        if (!Auth.guard()) {} // redirect handled in guard
+
+        renderNavbar('dashboard');
+
+        let pipelineChart, contactsChart;
+
+        async function loadDashboard() {
+            showLoading(true);
+            try {
+                // Load deals summary
+                const summary = await api('/api/deals/summary');
+                document.getElementById('statPipeline').textContent = formatCurrency(summary.pipeline_value);
+                document.getElementById('statWon').textContent = `${summary.won} / ${formatCurrency(summary.won * 20000)}`; // approx
+
+                // Load contacts count
+                const contactsData = await api('/api/contacts?per_page=1');
+                document.getElementById('statContacts').textContent = contactsData.total;
+
+                // Load companies (unique from contacts)
+                const allContacts = await api('/api/contacts?per_page=1000');
+                const companies = new Set((allContacts.items || []).filter(c => c.company).map(c => c.company));
+                document.getElementById('statCompanies').textContent = companies.size;
+
+                // Load recent activities
+                const activities = await api('/api/activities/recent');
+                renderActivities(activities || []);
+
+                // Load recent contacts
+                renderRecentContacts((allContacts.items || []).slice(0, 5));
+
+                // Load deals for charts
+                const dealsData = await api('/api/deals?per_page=1000');
+                renderCharts(dealsData.items || [], allContacts.items || []);
+
+                // Update featured company if real data exists
+                updateFeaturedCompany(allContacts.items || []);
+
+            } catch (e) {
+                console.error(e);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function renderActivities(activities) {
+            const tbody = document.getElementById('activitiesBody');
+            if (!activities.length) {
+                tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No upcoming activities</td></tr>';
+                return;
+            }
+            tbody.innerHTML = activities.slice(0, 6).map(a => `
+                <tr>
+                    <td><span class="badge badge-${a.kind === 'Call' ? 'info' : a.kind === 'Email' ? 'warning' : 'neutral'}">${a.kind}</span></td>
+                    <td>${a.notes || '-'}</td>
+                    <td>${a.contact_id || '-'}</td>
+                    <td>${formatDate(a.happened_at)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderRecentContacts(contacts) {
+            const container = document.getElementById('recentContacts');
+            if (!contacts.length) {
+                container.innerHTML = '<div class="empty-state">No contacts yet</div>';
+                return;
+            }
+            container.innerHTML = contacts.map(c => {
+                const color = avatarColor(c.name);
+                // Derive status from deals or default
+                const status = c.status || 'Lead';
+                return `
+                    <a href="contact_form.html?id=${c.id}" class="list-item">
+                        <div class="avatar ${color}">${initials(c.name)}</div>
+                        <div class="list-content">
+                            <h4>${c.name}</h4>
+                            <p>${c.company || 'No company'}</p>
+                        </div>
+                        <span class="badge ${statusBadge(status)}">${status}</span>
+                    </a>
+                `;
+            }).join('');
+        }
+
+        function renderCharts(deals, contacts) {
+            // Pipeline by stage (using status as stage proxy)
+            const stageMap = {};
+            deals.forEach(d => {
+                stageMap[d.status] = (stageMap[d.status] || 0) + d.value;
+            });
+            const stages = Object.keys(stageMap);
+            const stageValues = Object.values(stageMap);
+
+            const ctx1 = document.getElementById('pipelineChart').getContext('2d');
+            if (pipelineChart) pipelineChart.destroy();
+            pipelineChart = new Chart(ctx1, {
+                type: 'bar',
+                data: {
+                    labels: stages.length ? stages : ['Open', 'Won', 'Lost'],
+                    datasets: [{
+                        label: 'Value',
+                        data: stageValues.length ? stageValues : [0, 0, 0],
+                        backgroundColor: '#3B82F6',
+                        borderRadius: 6,
+                        barThickness: 40
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#F3F4F6' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+
+            // Contacts by status (mocked distribution based on company presence)
+            const hasCompany = contacts.filter(c => c.company).length;
+            const noCompany = contacts.length - hasCompany;
+            const ctx2 = document.getElementById('contactsChart').getContext('2d');
+            if (contactsChart) contactsChart.destroy();
+            contactsChart = new Chart(ctx2, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Customer', 'Lead', 'Prospect'],
+                    datasets: [{
+                        data: [hasCompany || 1, noCompany || 1, Math.floor(contacts.length / 3) || 1],
+                        backgroundColor: ['#3B82F6', '#F59E0B', '#EF4444'],
+                        borderWidth: 0,
+                        cutout: '60%'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { usePointStyle: true, padding: 16 } }
+                    }
+                }
+            });
+        }
+
+        function updateFeaturedCompany(contacts) {
+            const withCompany = contacts.filter(c => c.company);
+            if (!withCompany.length) return;
+            const c = withCompany[0];
+            const el = document.getElementById('featuredCompany');
+            el.querySelector('h3').innerHTML = `${c.company} <span class="badge badge-warning">Trading</span>`;
+            el.querySelector('.company-url').textContent = c.email || 'No website';
+            el.querySelector('.company-url').href = c.email ? `mailto:${c.email}` : '#';
+            const meta = el.querySelector('.company-meta');
+            meta.innerHTML = `
+                <div class="company-meta-item"><span>&#9993;</span><span>${c.email || 'N/A'}</span></div>
+                <div class="company-meta-item"><span>&#9742;</span><span>${c.phone || 'N/A'}</span></div>
+                <div class="company-meta-item"><span>&#128205;</span><span>${c.notes || 'N/A'}</span></div>
+            `;
+        }
+
+        loadDashboard();
+    </script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+| File                 | Purpose                                                                                                                                                   |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `css/style.css`      | Complete theme stylesheet matching your purple/lavender design, responsive layout, cards, tables, badges, and modals                                      |
+| `js/app.js`          | Shared utilities: JWT auth, API client, toast notifications, global search, loading spinner, delete confirmation                                          |
+| `login.html`         | Login page with form validation                                                                                                                           |
+| `register.html`      | Registration page                                                                                                                                         |
+| `index.html`         | **Dashboard** matching your screenshot — stats cards, upcoming activities table, recent contacts list, Chart.js bar & donut charts, featured company card |
+| `contacts.html`      | Contact list with search and pagination                                                                                                                   |
+| `contact_form.html`  | Add/Edit contact form                                                                                                                                     |
+| `deals.html`         | Deals list with status filter and pagination                                                                                                              |
+| `deal_form.html`     | Add/Edit deal form with contact dropdown                                                                                                                  |
+| `activities.html`    | Activities list with type filter                                                                                                                          |
+| `activity_form.html` | Add/Edit activity form with contact/deal dropdowns                                                                                                        |
+
+How to Use
+Copy all files from /mnt/agents/output/frontend/ to your Flask app/static/ and app/templates/ folders (or serve them statically).
+Ensure your Flask CORS config allows the origin if you're opening the HTML files directly, or serve them from the same origin.
+The frontend expects the API at http://localhost:5000 by default. Change it in js/app.js (API_BASE) if needed.
+Backend files were left completely unchanged — the frontend consumes your existing /api/* endpoints.
