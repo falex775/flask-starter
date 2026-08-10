@@ -31,9 +31,9 @@ def create_app():
     app.register_blueprint(search_bp)
 
     # Register CLI commands
-    from app.cli import seed, import_contacts
-    app.cli.add_command(seed)
-    app.cli.add_command(import_contacts)
+    #from app.cli import seed, import_contacts
+    #app.cli.add_command(seed)
+    #app.cli.add_command(import_contacts)
 
     # Serve static files
     @app.get("/static/<path:filename>")
@@ -70,4 +70,9 @@ def create_app():
             "message": "An unexpected error occurred"
         }), 500
 
+    with app.app_context():
+        db.create_all()
+
     return app
+
+
