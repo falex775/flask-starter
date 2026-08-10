@@ -1,11 +1,12 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
+import os
 
 from app.config import Config
 from app.extensions import db, migrate, jwt, cors
 
 
 def create_app():
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
     app.config.from_object(Config)
 
     # Initialize extensions
@@ -34,16 +35,26 @@ def create_app():
     app.cli.add_command(seed)
     app.cli.add_command(import_contacts)
 
-    # Register root index route
+    # Serve static files
+    @app.get("/static/<path:filename>")
+    def serve_static(filename):
+        return send_from_directory(app.static_folder, filename)
+
+    # Root index route - serve index.html
     @app.get("/")
     def index():
-        return jsonify({
-            "message": "CRM API is running",
-            "version": "1.0",
-            "health": "/api/health"
-        })
+        return send_from_directory(app.static_folder, 'index.html')
 
-    # Register 404 error handler
+    # Catch-all route for SPA navigation - serve index.html for unmapped routes
+    @app.get("/<path:path>")
+    def catch_all(path):
+        # Check if it's a static file request
+        if os.path.isfile(os.path.join(app.static_folder, path)):
+            return send_from_directory(app.static_folder, path)
+        # Otherwise serve index.html for SPA routing
+        return send_from_directory(app.static_folder, 'index.html')
+
+    # Register 404 error handler (for API routes that don't match)
     @app.errorhandler(404)
     def not_found(error):
         return jsonify({
