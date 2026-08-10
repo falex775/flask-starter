@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, jsonify
 
 from app.config import Config
 from app.extensions import db, migrate, jwt, cors
@@ -33,5 +33,30 @@ def create_app():
     from app.cli import seed, import_contacts
     app.cli.add_command(seed)
     app.cli.add_command(import_contacts)
+
+    # Register root index route
+    @app.get("/")
+    def index():
+        return jsonify({
+            "message": "CRM API is running",
+            "version": "1.0",
+            "health": "/api/health"
+        })
+
+    # Register 404 error handler
+    @app.errorhandler(404)
+    def not_found(error):
+        return jsonify({
+            "error": "Not Found",
+            "message": "The requested resource does not exist"
+        }), 404
+
+    # Register 500 error handler
+    @app.errorhandler(500)
+    def internal_error(error):
+        return jsonify({
+            "error": "Internal Server Error",
+            "message": "An unexpected error occurred"
+        }), 500
 
     return app
