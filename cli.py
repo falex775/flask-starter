@@ -1,9 +1,10 @@
 import csv
 import click
 
-from flask.cli import with_appcontext
+from flask.cli import with_appcontext, FlaskGroup
 
 from app.extensions import db
+from app import create_app
 
 from app.models.user import User
 from app.models.contact import Contact
@@ -95,3 +96,24 @@ def import_contacts(filename):
         click.echo(f"File not found: {filename}")
     except Exception as e:
         click.echo(f"Import failed: {e}")
+
+
+def main():
+    """
+    Create the Flask app and expose CLI commands so you can run:
+      python cli.py seed
+      python cli.py import-contacts <filename>
+    """
+    # Create a Flask CLI group using the app factory
+    cli = FlaskGroup(create_app=create_app)
+
+    # Register commands
+    cli.add_command(seed)
+    cli.add_command(import_contacts)
+
+    # Run the CLI
+    cli()
+
+
+if __name__ == "__main__":
+    main()
