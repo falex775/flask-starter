@@ -4,20 +4,36 @@
 
 const API_BASE = ''; //localStorage.getItem('api_base') || 'http://localhost:5000';
 
+// Safe storage wrapper to handle Tracking Prevention / Storage access errors
+const safeStorage = {
+    getItem(key) {
+        try { return localStorage.getItem(key); }
+        catch (e) { console.warn('Storage access blocked', e); return null; }
+    },
+    setItem(key, value) {
+        try { localStorage.setItem(key, value); }
+        catch (e) { console.warn('Storage access blocked', e); }
+    },
+    removeItem(key) {
+        try { localStorage.removeItem(key); }
+        catch (e) { console.warn('Storage access blocked', e); }
+    }
+};
+
 // Auth utilities
 const Auth = {
-    getToken() { return localStorage.getItem('token'); },
+    getToken() { return safeStorage.getItem('token'); },
     getUser() {
-        const u = localStorage.getItem('user');
+        const u = safeStorage.getItem('user');
         return u ? JSON.parse(u) : null;
     },
     setSession(token, user) {
-        localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(user));
+        safeStorage.setItem('token', token);
+        safeStorage.setItem('user', JSON.stringify(user));
     },
     clearSession() {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        safeStorage.removeItem('token');
+        safeStorage.removeItem('user');
     },
     isLoggedIn() { return !!this.getToken(); },
     guard() {
@@ -37,14 +53,14 @@ const Auth = {
 async function api(url, options = {}) {
     const fullUrl = url.startsWith('http') ? url : `${API_BASE}${url}`;
     const token = Auth.getToken();
-    const opts = {
-        headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-            ...options.headers
-        },
-        ...options
-    };
+
+    // Build headers only when needed. Do not send Content-Type for GET requests without a body.
+    const headers = { ...(options.headers || {}) };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (options.body !== undefined && options.body !== null) headers['Content-Type'] = 'application/json';
+
+    const opts = { headers, ...options };
+
     if (opts.body && typeof opts.body === 'object') {
         opts.body = JSON.stringify(opts.body);
     }
@@ -143,6 +159,7 @@ function statusBadge(status) {
 // Render navbar
 function renderNavbar(activePage) {
     const user = Auth.getUser();
+    const addNewHtml = activePage === 'dashboard' ? '' : '<a href="contact_form.html" class="btn-primary">+ Add new</a>';
     const html = `
         <div class="top-bar">
             <a href="#" onclick="alert('Feedback form coming soon'); return false;">Send Feedback</a>
@@ -169,7 +186,7 @@ function renderNavbar(activePage) {
                 <button onclick="performGlobalSearch()">&#128269;</button>
                 <div class="search-dropdown" id="searchDropdown"></div>
             </div>
-            <a href="contact_form.html" class="btn-primary">+ Add new</a>
+            ${addNewHtml}
         </nav>
     `;
     const el = document.getElementById('navbar');
