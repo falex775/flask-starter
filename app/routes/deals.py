@@ -22,7 +22,7 @@ deals_bp = Blueprint(
 @deals_bp.get("")
 @jwt_required()
 def list_deals():
-    uid = get_jwt_identity()
+    uid = int(get_jwt_identity())
     query = Deal.query.filter_by(user_id=uid)
 
     status = request.args.get("status")
@@ -53,7 +53,7 @@ def list_deals():
 @deals_bp.get("/<int:id>")
 @jwt_required()
 def get_deal(id):
-    uid = get_jwt_identity()
+    uid = int(get_jwt_identity())
     deal = Deal.query.filter_by(id=id, user_id=uid).first_or_404()
     return jsonify(deal.to_dict())
 
@@ -62,7 +62,7 @@ def get_deal(id):
 @deals_bp.post("")
 @jwt_required()
 def create_deal():
-    uid = get_jwt_identity()
+    uid = int(get_jwt_identity())
     data = request.get_json()
 
     if not data or not data.get("title"):
@@ -93,7 +93,7 @@ def create_deal():
 @deals_bp.put("/<int:id>")
 @jwt_required()
 def update_deal(id):
-    uid = get_jwt_identity()
+    uid = int(get_jwt_identity())
     deal = Deal.query.filter_by(id=id, user_id=uid).first_or_404()
     data = request.get_json()
 
@@ -111,7 +111,7 @@ def update_deal(id):
 @deals_bp.delete("/<int:id>")
 @jwt_required()
 def delete_deal(id):
-    uid = get_jwt_identity()
+    uid = int(get_jwt_identity())
     deal = Deal.query.filter_by(id=id, user_id=uid).first_or_404()
 
     db.session.delete(deal)
@@ -125,7 +125,7 @@ def delete_deal(id):
 @deals_bp.get("/summary")
 @jwt_required()
 def summary():
-    uid = get_jwt_identity()
+    uid = int(get_jwt_identity())
 
     total_value = db.session.query(func.sum(Deal.value)).filter_by(
         user_id=uid, status="Open"
