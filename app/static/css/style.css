@@ -1,5 +1,4 @@
-
-css = '''/* ============================================
+/* ============================================
    MyCRM Frontend Styles
    ============================================ */
 
@@ -267,7 +266,6 @@ body {
 .avatar.orange { background: #F97316; }
 .avatar.red { background: #EF4444; }
 .avatar.teal { background: #14B8A6; }
-
 .list-content { flex: 1; min-width: 0; }
 .list-content h4 {
     font-size: 14px; font-weight: 600;
@@ -363,7 +361,7 @@ body {
 .auth-card .brand { justify-content: center; margin-bottom: 8px; }
 .auth-card h2 { text-align: center; margin-bottom: 24px; font-size: 22px; }
 .auth-card .form-actions { justify-content: stretch; }
-.auth-card .form-actions .btn-primary { width: 100%; justify-content: center; }
+.auth-card .form-actions .btn-primary { width: 100%; justify-content: center; background: #0d6efd; color: #ffffff; border: none; padding: 10px 16px; border-radius: 4px; }
 .auth-footer { text-align: center; margin-top: 20px; font-size: 14px; color: var(--text-muted); }
 .auth-footer a { color: var(--primary); text-decoration: none; font-weight: 600; }
 
@@ -482,9 +480,3 @@ body {
 @media (max-width: 480px) {
     .stats-grid { grid-template-columns: 1fr; }
 }
-'''
-
-with open(f"{base_dir}/css/style.css", "w", encoding="utf-8") as f:
-    f.write(css)
-
-print("style.css written successfully")
