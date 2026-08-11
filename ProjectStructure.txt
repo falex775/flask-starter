@@ -1,0 +1,41 @@
+.
+├── app
+│   ├── __init__.py
+│   ├── config.py
+│   ├── extensions.py
+│   ├── models
+│   │   ├── activity.py
+│   │   ├── contact.py
+│   │   ├── deal.py
+│   │   └── user.py
+│   ├── routes
+│   │   ├── activities.py
+│   │   ├── auth.py
+│   │   ├── contacts.py
+│   │   ├── deals.py
+│   │   ├── health.py
+│   │   └── search.py
+│   └── static
+│       ├── activities.html
+│       ├── activity_form.html
+│       ├── companies.html
+│       ├── company_form.html
+│       ├── contact_form.html
+│       ├── contacts.html
+│       ├── css
+│       │   └── style.css
+│       ├── deal_form.html
+│       ├── deals.html
+│       ├── index.html
+│       ├── js
+│       │   └── app.js
+│       ├── login.html
+│       └── register.html
+├── cli.py
+├── flask_app.py
+├── instance
+│   └── crm.db
+├── requirements.txt
+└── sample_data.csv
+
+7 directories, 31 files
