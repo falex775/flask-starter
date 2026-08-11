@@ -1,3 +1,5 @@
 **/__pycache__/*
 .env
 .shipit
+gc.sh
+tree.zip

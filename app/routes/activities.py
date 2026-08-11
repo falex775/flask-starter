@@ -22,7 +22,7 @@ activities_bp = Blueprint(
 @activities_bp.get("")
 @jwt_required()
 def list_activities():
-    uid = int(get_jwt_identity())
+    uid = get_jwt_identity()
     query = Activity.query.filter_by(user_id=uid)
 
     contact_id = request.args.get("contact_id", type=int)
@@ -42,7 +42,7 @@ def list_activities():
 @activities_bp.get("/recent")
 @jwt_required()
 def recent():
-    uid = int(get_jwt_identity())
+    uid = get_jwt_identity()
     activities = Activity.query.filter_by(user_id=uid).order_by(
         Activity.happened_at.desc()
     ).limit(10).all()
@@ -54,7 +54,7 @@ def recent():
 @activities_bp.get("/<int:id>")
 @jwt_required()
 def get_activity(id):
-    uid = int(get_jwt_identity())
+    uid = get_jwt_identity()
     activity = Activity.query.filter_by(id=id, user_id=uid).first_or_404()
     return jsonify(activity.to_dict())
 
@@ -63,7 +63,7 @@ def get_activity(id):
 @activities_bp.post("")
 @jwt_required()
 def create_activity():
-    uid = int(get_jwt_identity())
+    uid = get_jwt_identity()
     data = request.get_json()
 
     if not data or not data.get("kind"):
@@ -99,7 +99,7 @@ def create_activity():
 @activities_bp.put("/<int:id>")
 @jwt_required()
 def update_activity(id):
-    uid = int(get_jwt_identity())
+    uid = get_jwt_identity()
     activity = Activity.query.filter_by(id=id, user_id=uid).first_or_404()
     data = request.get_json()
 
@@ -119,7 +119,7 @@ def update_activity(id):
 @activities_bp.delete("/<int:id>")
 @jwt_required()
 def delete_activity(id):
-    uid = int(get_jwt_identity())
+    uid = get_jwt_identity()
     activity = Activity.query.filter_by(id=id, user_id=uid).first_or_404()
 
     db.session.delete(activity)

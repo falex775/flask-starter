@@ -66,6 +66,6 @@ def login():
 @auth_bp.get("/me")
 @jwt_required()
 def me():
-    uid = int(get_jwt_identity())
+    uid = get_jwt_identity()
     user = User.query.get_or_404(uid)
     return jsonify(user.to_dict())

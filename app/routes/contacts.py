@@ -20,7 +20,7 @@ contacts_bp = Blueprint(
 @contacts_bp.get("")
 @jwt_required()
 def list_contacts():
-    user_id = int(get_jwt_identity())
+    user_id = get_jwt_identity()
 
     q = request.args.get("q")
     page = request.args.get("page", 1, type=int)
@@ -56,7 +56,7 @@ def list_contacts():
 @contacts_bp.get("/<int:id>")
 @jwt_required()
 def get_contact(id):
-    user_id = int(get_jwt_identity())
+    user_id = get_jwt_identity()
     contact = Contact.query.filter_by(id=id, user_id=user_id).first_or_404()
     return jsonify(contact.to_dict())
 
@@ -66,7 +66,7 @@ def get_contact(id):
 @jwt_required()
 def create_contact():
     data = request.get_json()
-    user_id = int(get_jwt_identity())
+    user_id = get_jwt_identity()
 
     if not data or not data.get("name"):
         return jsonify({"message": "Name required"}), 400
@@ -90,7 +90,7 @@ def create_contact():
 @contacts_bp.put("/<int:id>")
 @jwt_required()
 def update_contact(id):
-    user_id = int(get_jwt_identity())
+    user_id = get_jwt_identity()
     contact = Contact.query.filter_by(id=id, user_id=user_id).first_or_404()
     data = request.get_json()
 
@@ -108,7 +108,7 @@ def update_contact(id):
 @contacts_bp.delete("/<int:id>")
 @jwt_required()
 def delete_contact(id):
-    user_id = int(get_jwt_identity())
+    user_id = get_jwt_identity()
     contact = Contact.query.filter_by(id=id, user_id=user_id).first_or_404()
 
     db.session.delete(contact)

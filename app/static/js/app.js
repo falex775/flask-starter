@@ -2,7 +2,7 @@
    MyCRM Shared JavaScript
    ============================================ */
 
-const API_BASE = ''; //localStorage.getItem('api_base') || 'http://localhost:5000';
+const API_BASE = 'https://www.pythonanywhere.com/user/Friend/mysite'; //localStorage.getItem('api_base') || 'http://localhost:5000'; // '';
 
 // Safe storage wrapper to handle Tracking Prevention / Storage access errors
 const safeStorage = {
@@ -59,13 +59,14 @@ async function api(url, options = {}) {
     if (token) headers['Authorization'] = `Bearer ${token}`;
     if (options.body !== undefined && options.body !== null) headers['Content-Type'] = 'application/json';
 
-    const opts = { headers, ...options };
+    const opts = { headers, mode: 'no-cors', ...options }; // was: const opts = { headers, ...options };
 
     if (opts.body && typeof opts.body === 'object') {
         opts.body = JSON.stringify(opts.body);
     }
+
     try {
-        const res = await fetch(fullUrl, opts);
+        const res = await fetch(fullUrl, opts); //was: const res = await fetch(fullUrl, opts);
         if (res.status === 401) {
             Auth.clearSession();
             window.location.href = 'login.html';
@@ -73,7 +74,7 @@ async function api(url, options = {}) {
         }
         const data = res.status !== 204 ? await res.json().catch(() => ({})) : {};
         if (!res.ok) {
-            throw new Error(data.message || `HTTP ${res.status}`);
+            throw new Error(data.message || `HTTP ${res.status}`); //was: throw new Error(data.message || `HTTP ${res.status}`);
         }
         return data;
     } catch (err) {
