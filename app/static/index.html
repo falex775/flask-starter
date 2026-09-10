@@ -1,284 +1,955 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - MyCRM</title>
-    <link rel="stylesheet" href="css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CRM</title>
+<!-- =====================================================================
+  OPTIMIZED BUILD — what changed vs the original:
+  1. Chart.js CDN (~200KB) removed. The two charts are rendered as inline
+     SVG by ~50 lines of dependency-free code.
+  2. No more full-page reloads (window.location.href = 'index.html' after
+     login/register/logout). State is updated in place, saving a full
+     HTML+CSS+JS re-download on every auth action.
+  3. Dashboard no longer downloads 3 x 1000 rows. It uses the cheap
+     /activities/recent endpoint (10 rows instead of 1000) and fetches
+     deals once (500-row cap) which is reused for KPIs, Top Deals and both
+     charts. Deals KPIs are computed from that same payload rather than a
+     separate /deals/summary call, since the rows are needed for charts
+     anyway. Contacts are fetched once (1000-row cap) as the join table
+     for names, form selects and search.
+  4. GET responses are cached in-memory with a TTL; table pages reuse
+     cache when revisited. Mutations clear the cache.
+  5. 60s polling removed. Dashboard refreshes when the tab becomes
+     visible again (cheap, thanks to the cache).
+  6. Fixed: pager positional indexing, timezone-shifted dates (toISOString),
+     search results now open the matched record, edit modal works for
+     records outside the loaded page (fetches the single record), dead code
+     after redirects removed, modal gets role="dialog"/Escape/focus.
+====================================================================== -->
+<style>
+  :root{
+    --bg:#f4f6fb; --card:#fff; --ink:#1f2733; --muted:#6b7686;
+    --line:#e5e9f2; --brand:#4f6ef7; --brand-dark:#3b55d6;
+    --green:#25b57e; --red:#e5484d; --amber:#f5a623; --purple:#8b5cf6;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+       background:var(--bg); color:var(--ink); font-size:14px;}
+  a{color:inherit; text-decoration:none;}
+
+  /* Top menu bar */
+  .topbar{position:sticky; top:0; z-index:50; display:flex; align-items:center; gap:16px;
+          background:var(--card); border-bottom:1px solid var(--line); padding:0 22px; height:60px;
+          box-shadow:0 1px 3px rgba(16,24,40,.05);}
+  .brand{display:flex; align-items:center; gap:10px; font-weight:800; font-size:18px;}
+  .brand .logo{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;
+               background:linear-gradient(135deg,var(--brand),var(--purple)); color:#fff; font-size:16px;}
+  .searchwrap{flex:1; max-width:420px; position:relative;}
+  .searchwrap svg{position:absolute; left:11px; top:50%; transform:translateY(-50%); color:var(--muted);}
+  .searchbox{width:100%; padding:9px 14px 9px 36px; border:1px solid var(--line); border-radius:10px;
+             background:var(--bg); font-size:14px; outline:none;}
+  .searchbox:focus{border-color:var(--brand); box-shadow:0 0 0 3px rgba(79,110,247,.15); background:#fff;}
+  .menu{display:flex; align-items:center; gap:4px; margin-left:auto;}
+  .menu a{padding:8px 12px; border-radius:8px; color:var(--muted); font-weight:600; transition:.15s; white-space:nowrap;}
+  .menu a:hover{background:var(--bg); color:var(--ink);}
+  .menu a.active{background:var(--bg); color:var(--ink);}
+  .menu .btn-auth{background:var(--brand); color:#fff; padding:8px 16px; border-radius:10px;}
+  .menu .btn-auth:hover{background:var(--brand-dark); color:#fff;}
+  .menu .btn-auth.outline{background:transparent; color:var(--brand); border:1px solid var(--brand);}
+  .menu .btn-auth.outline:hover{background:var(--brand); color:#fff;}
+  .userpill{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:10px;background:var(--bg);font-weight:600;}
+  .avatar{width:30px;height:30px;border-radius:50%;background:var(--brand);color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;flex:none;}
+  #userName{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+  main{padding:22px; max-width:1500px; margin:0 auto;}
+  .page{display:none;} .page.active{display:block;}
+
+  /* Dashboard grid: left 2/3, right 1/3 */
+  .dash-grid{display:grid; grid-template-columns:2fr 1fr; gap:20px; align-items:start;}
+  .dash-left,.dash-right{display:flex; flex-direction:column; gap:20px;}
+  @media(max-width:1000px){ .dash-grid{grid-template-columns:1fr;} }
+
+  .kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:16px;}
+  @media(max-width:900px){ .kpis{grid-template-columns:repeat(2,1fr);} }
+  .kpi{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px; position:relative;}
+  .kpi .lbl{color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.4px;}
+  .kpi .val{font-size:28px; font-weight:800; margin-top:6px;}
+  .kpi .ico{position:absolute; top:16px; right:16px; width:38px;height:38px;border-radius:10px;display:grid;place-items:center;font-size:17px;}
+  .i-blue{background:rgba(79,110,247,.12);} .i-green{background:rgba(37,181,126,.12);}
+  .i-amber{background:rgba(245,166,35,.12);} .i-red{background:rgba(229,72,77,.12);} .i-purple{background:rgba(139,92,246,.12);}
+
+  .widget{background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden;}
+  .widget .head{padding:14px 18px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between;}
+  .widget .head h2{font-size:15px; font-weight:700;}
+  .widget .head .sub{font-size:12px; color:var(--muted);}
+  .widget .body.chart-body{padding:16px 18px;}
+  .chartbox{position:relative; height:230px;}
+
+  .listrows .row{display:flex; align-items:center; gap:14px; padding:11px 18px; border-bottom:1px solid var(--line);}
+  .listrows .row:last-child{border-bottom:none;}
+  .listrows .row:hover{background:#fafbff;}
+  .av{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px;flex:none;}
+  .rowexp{border-left:3px solid transparent; padding-left:15px;}
+  .row-main-t{font-weight:600; font-size:14px;}
+  .row-sub{font-size:12px; color:var(--muted); margin-top:2px;}
+  .row-right{margin-left:auto; text-align:right; flex:none;}
+  .amt{font-weight:800;}
+  .chip{display:inline-flex; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700;}
+  .st-lead{background:rgba(139,92,246,.13); color:#7c3aed;}
+  .st-prospect{background:rgba(79,110,247,.13); color:var(--brand-dark);}
+  .st-open{background:rgba(245,166,35,.18); color:#b7791f;}
+  .st-won{background:rgba(37,181,126,.15); color:var(--green);}
+  .st-lost{background:rgba(229,72,77,.14); color:var(--red);}
+
+  .listhead{display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; gap:12px;}
+  .listhead h1{font-size:22px; font-weight:800;}
+  .btn{display:inline-flex; align-items:center; gap:7px; border:none; cursor:pointer; padding:10px 18px;
+       border-radius:10px; font-weight:700; font-size:14px; transition:filter .15s;}
+  .btn-primary{background:var(--brand); color:#fff;} .btn-primary:hover{filter:brightness(.95);}
+  .btn-sm{padding:6px 11px; font-size:12px; border-radius:8px; font-weight:600;}
+  .btn-edit{background:rgba(79,110,247,.1); color:var(--brand);} .btn-edit:hover{background:var(--brand); color:#fff;}
+  .btn-del{background:rgba(229,72,77,.1); color:var(--red);} .btn-del:hover{background:var(--red); color:#fff;}
+
+  .tablewrap{overflow-x:auto; border-radius:14px;}
+  table{width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden;}
+  thead th{text-align:left; padding:13px 16px; background:#fafbfe; color:var(--muted); font-size:12px;
+           text-transform:uppercase; letter-spacing:.4px; border-bottom:1px solid var(--line); font-weight:700;}
+  tbody td{padding:12px 16px; border-bottom:1px solid var(--line); vertical-align:middle;}
+  tbody tr:last-child td{border-bottom:none;} tbody tr:hover{background:#fafbff;}
+  .cell-actions{display:flex; gap:6px; justify-content:flex-end; white-space:nowrap;}
+  .empty{padding:40px; text-align:center; color:var(--muted);}
+  .pg{padding:14px; display:flex; align-items:center; gap:10px;}
+  .pg button{padding:6px 13px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;font-weight:600;}
+  .pg button:disabled{opacity:.4;cursor:default;}
+  .pg .info{margin-left:auto; color:var(--muted); font-size:13px;}
+
+  .overlay{position:fixed; inset:0; background:rgba(16,24,40,.45); display:none; align-items:center; justify-content:center; z-index:100; padding:20px;}
+  .overlay.open{display:flex;}
+  .modal{background:#fff; border-radius:16px; width:100%; max-width:520px; max-height:90vh; overflow:auto; padding:24px;}
+  .modal h3{font-size:18px; margin-bottom:18px;}
+  .field{margin-bottom:15px;}
+  .field label{display:block; font-weight:600; font-size:13px; margin-bottom:6px;}
+  .field input,.field select,.field textarea{width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; font-size:14px; outline:none;}
+  .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--brand); box-shadow:0 0 0 3px rgba(79,110,247,.12);}
+  .mfoot{display:flex; justify-content:flex-end; gap:10px; margin-top:20px;}
+  .btn-ghost{background:var(--bg); color:var(--ink);}
+  .toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#1f2937; color:#fff;
+         padding:11px 20px; border-radius:10px; font-weight:600; opacity:0; transition:all .25s; z-index:300; pointer-events:none;}
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(-6px);}
+  .toast.ok{background:var(--green);} .toast.err{background:var(--red);}
+  .srch-drop{position:absolute; top:48px; left:0; right:0; background:#fff; border:1px solid var(--line); border-radius:12px;
+             box-shadow:0 10px 30px rgba(16,24,40,.12); overflow:hidden; display:none;}
+  .srch-drop.open{display:block;}
+  .srch-item{padding:11px 14px; border-bottom:1px solid var(--line); cursor:pointer;}
+  .srch-item:last-child{border-bottom:none;} .srch-item:hover{background:#fafbff;}
+  .srch-item .t{font-weight:600; font-size:13px;} .srch-item .s{font-size:12px; color:var(--muted);}
+  .srch-type{float:right; font-size:10px; font-weight:800; text-transform:uppercase; color:var(--brand);
+             background:rgba(79,110,247,.1); padding:2px 7px; border-radius:6px;}
+
+  /* Chart legends (inline SVG charts) */
+  .lgwrap{display:flex; flex-wrap:wrap; gap:6px 12px; padding:10px 2px 2px; font-size:11px; color:var(--muted);}
+  .lg{display:inline-flex; align-items:center; gap:5px; font-weight:600;}
+  .dot{width:9px; height:9px; border-radius:3px; display:inline-block;}
+
+  /* ================= FOOTER ================= */
+  .site-footer{max-width:1500px; margin:40px auto 0; padding:22px; border-top:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:20px; color:var(--muted); font-size:13px;}
+  .footer-links{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+  .footer-links a{padding:7px 10px; border-radius:8px; font-weight:600;}
+  .footer-links a:hover{background:var(--card); color:var(--ink);}
+  @media(max-width:700px){ .site-footer{flex-direction:column; align-items:flex-start;} }
+</style>
 </head>
 <body>
-    <div id="navbar"></div>
-    <div class="container">
-        <!-- Stats Cards -->
-        <div class="stats-grid" id="statsGrid">
-            <div class="stat-card">
-                <div class="stat-icon blue">&#128101;</div>
-                <div class="stat-info">
-                    <h3 id="statContacts">-</h3>
-                    <p>Contacts</p>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon cyan">&#127970;</div>
-                <div class="stat-info">
-                    <h3 id="statCompanies">-</h3>
-                    <p>Companies</p>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon yellow">&#128176;</div>
-                <div class="stat-info">
-                    <h3 id="statPipeline">-</h3>
-                    <p>Pipeline Value</p>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon green">&#127942;</div>
-                <div class="stat-info">
-                    <h3 id="statWon">-</h3>
-                    <p>Won Deals</p>
-                </div>
-            </div>
+
+<!-- ================= TOP MENU ================= -->
+<header class="topbar">
+  <div class="brand"><span class="logo">◈</span>CRM</div>
+  <div class="searchwrap">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    <input id="globalSearch" class="searchbox" type="search" placeholder="Global search…" autocomplete="off"/>
+    <div class="srch-drop" id="srchDrop"></div>
+  </div>
+  <nav class="menu" id="mainMenu">
+    <a href="#" data-page="dashboard" class="active">Dashboard</a>
+    <a href="#" data-page="activities">Activities</a>
+    <a href="#" data-page="contacts">Contacts</a>
+    <a href="#" data-page="deals">Deals</a>
+    <a href="#" data-page="help">Help</a>
+    <a href="#" data-page="account">
+      <span class="userpill" id="userPill" hidden><span class="avatar" id="userAvatar">?</span><span id="userName">User</span></span>
+      <span id="accountLbl">Account</span>
+    </a>
+    <a href="#" id="authBtn" class="btn-auth outline">Log in</a>
+  </nav>
+</header>
+
+<main>
+
+  <!-- ===== DASHBOARD ===== -->
+  <section class="page active" id="page-dashboard">
+    <div class="listhead"><h1>Dashboard</h1></div>
+    <div class="dash-grid">
+      <div class="dash-left">
+        <div class="kpis">
+          <div class="kpi"><span class="ico i-blue">👤</span><div class="lbl">Total Contacts</div><div class="val" id="kpiContacts">–</div></div>
+          <div class="kpi"><span class="ico i-purple">💼</span><div class="lbl">Total Deals</div><div class="val" id="kpiDeals">–</div></div>
+          <div class="kpi"><span class="ico i-green">🏆</span><div class="lbl">Won Deals</div><div class="val" id="kpiWon">–</div></div>
+          <div class="kpi"><span class="ico i-amber">📌</span><div class="lbl">Total Activities</div><div class="val" id="kpiActivities">–</div></div>
         </div>
-
-        <div class="dashboard-grid">
-            <div class="dashboard-left">
-                <!-- Upcoming Activities -->
-                <div class="card">
-                    <div class="card-header">
-                        <h2>&#128197; Upcoming Activities</h2>
-                        <a href="activities.html" class="btn-secondary btn-sm">View all</a>
-                    </div>
-                    <div class="card-body">
-                        <table class="table" id="activitiesTable">
-                            <thead>
-                                <tr><th>Type</th><th>Subject</th><th>Contact</th><th>Date</th></tr>
-                            </thead>
-                            <tbody id="activitiesBody">
-                                <tr><td colspan="4" class="empty-state">Loading...</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Recent Contacts -->
-                <div class="card">
-                    <div class="card-header">
-                        <h2>&#128100; Recent Contacts</h2>
-                        <a href="contacts.html" class="btn-secondary btn-sm">View all</a>
-                    </div>
-                    <div class="card-body" id="recentContacts">
-                        <div class="empty-state">Loading...</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="dashboard-right">
-                <!-- Charts -->
-                <div class="card">
-                    <div class="card-header">
-                        <h2>Pipeline Value by Stage</h2>
-                    </div>
-                    <div class="chart-container">
-                        <canvas id="pipelineChart"></canvas>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <div class="card-header">
-                        <h2>Contacts by Status</h2>
-                    </div>
-                    <div class="chart-container">
-                        <canvas id="contactsChart"></canvas>
-                    </div>
-                </div>
-
-                <!-- Featured Company -->
-                <div class="card company-card" id="featuredCompany">
-                    <h3>ABC <span class="badge badge-warning">Trading</span></h3>
-                    <a href="https://abc.com" target="_blank" class="company-url">https://abc.com</a>
-                    <div class="company-meta">
-                        <div class="company-meta-item">
-                            <span>&#9993;</span>
-                            <span>admin@abc.com</span>
-                        </div>
-                        <div class="company-meta-item">
-                            <span>&#9742;</span>
-                            <span>+1000000000</span>
-                        </div>
-                        <div class="company-meta-item">
-                            <span>&#128205;</span>
-                            <span>#1</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <div class="widget">
+          <div class="head"><h2>Top Deals</h2><span class="sub">Top 10 by value</span></div>
+          <div class="listrows" id="dealList"></div>
         </div>
+        <div class="widget">
+          <div class="head"><h2>Recent Activities</h2><span class="sub">Latest 10, newest first</span></div>
+          <div class="listrows" id="recentList"></div>
+        </div>
+      </div>
+      <div class="dash-right">
+        <div class="widget">
+          <div class="head"><h2>Deal Pipeline</h2><span class="sub">Counts by status</span></div>
+          <div class="body chart-body"><div class="chartbox" id="histChart"></div></div>
+        </div>
+        <div class="widget">
+          <div class="head"><h2>Deal Value by Contact</h2><span class="sub">% of total value</span></div>
+          <div class="body chart-body"><div class="chartbox" id="pieChart"></div></div>
+        </div>
+      </div>
     </div>
+  </section>
 
-    <script src="js/app.js"></script>
-    <script>
-        if (!Auth.guard()) {} // redirect handled in guard
+  <!-- ===== DEALS ===== -->
+  <section class="page" id="page-deals">
+    <div class="listhead"><h1>Deals</h1><button class="btn btn-primary" onclick="openModal('deal',null)">＋ Add new</button></div>
+    <div class="tablewrap"><table id="dealsTable"></table></div>
+    <div class="pg" id="dealsPager"></div>
+  </section>
 
-        renderNavbar('dashboard');
+  <!-- ===== CONTACTS ===== -->
+  <section class="page" id="page-contacts">
+    <div class="listhead"><h1>Contacts</h1><button class="btn btn-primary" onclick="openModal('contact',null)">＋ Add new</button></div>
+    <div class="tablewrap"><table id="contactsTable"></table></div>
+    <div class="pg" id="contactsPager"></div>
+  </section>
 
-        let pipelineChart, contactsChart;
+  <!-- ===== ACTIVITIES ===== -->
+  <section class="page" id="page-activities">
+    <div class="listhead"><h1>Activities</h1><button class="btn btn-primary" onclick="openModal('activity',null)">＋ Add new</button></div>
+    <div class="tablewrap"><table id="activitiesTable"></table></div>
+    <div class="pg" id="activitiesPager"></div>
+  </section>
 
-        async function loadDashboard() {
-            showLoading(true);
-            try {
-                // Load deals summary
-                const summary = await api('/api/deals/summary');
-                document.getElementById('statPipeline').textContent = formatCurrency(summary.pipeline_value);
-                document.getElementById('statWon').textContent = `${summary.won} / ${formatCurrency(summary.won * 20000)}`; // approx
+  <!-- ===== STATIC PAGES ===== -->
+  <section class="page" id="page-contact"><div class="listhead"><h1>Contact us</h1></div><div class="widget"><div class="listrows"><div class="row rowexp"><div><div class="row-main-t">📧 support@nimbuscrm.example</div><div class="row-sub">For support & billing</div></div><div class="row-right"><span class="amt">Mon–Fri</span></div></div><div class="row rowexp"><div><div class="row-main-t">📞 +1 (555) 010-2030</div><div class="row-sub">Sales line</div></div><div class="row-right"><span class="amt">9am–6pm</span></div></div></div></div></section>
 
-                // Load contacts count
-                const contactsData = await api('/api/contacts?per_page=1');
-                document.getElementById('statContacts').textContent = contactsData.total;
+  <section class="page" id="page-forums"><div class="listhead"><h1>Community Forums</h1></div><div class="widget"><div class="listrows">
+    <div class="row rowexp" style="border-color:var(--brand);"><div><div class="row-main-t">How do I bulk import contacts?</div><div class="row-sub">3 replies · Sales workflows · 2d ago</div></div></div>
+    <div class="row rowexp" style="border-color:var(--green);"><div><div class="row-main-t">Deal pipeline best practices</div><div class="row-sub">8 replies · Getting started · 5d ago</div></div></div>
+  </div></div></section>
 
-                // Load companies (unique from contacts)
-                const allContacts = await api('/api/contacts?per_page=1000');
-                const companies = new Set((allContacts.items || []).filter(c => c.company).map(c => c.company));
-                document.getElementById('statCompanies').textContent = companies.size;
+  <section class="page" id="page-help"><div class="listhead"><h1>Help Center</h1></div><div class="widget"><div class="listrows">
+    <div class="row rowexp"><div><div class="row-main-t">Dashboard overview</div><div class="row-sub">Understand KPIs and widgets</div></div></div>
+    <div class="row rowexp"><div><div class="row-main-t">Managing deals and the pipeline</div><div class="row-sub">Create, edit and track deals</div></div></div>
+    <div class="row rowexp"><div><div class="row-main-t">Contacts</div><div class="row-sub">Keep your address book organized</div></div></div>
+    <div class="row rowexp"><div><div class="row-main-t">Global search</div><div class="row-sub">Find anything from the top bar</div></div></div>
+  </div></div></section>
 
-                // Load recent activities
-                const activities = await api('/api/activities/recent');
-                renderActivities(activities || []);
+  <section class="page" id="page-blog"><div class="listhead"><h1>Blog</h1></div><div class="widget"><div class="listrows">
+    <div class="row rowexp"><div><div class="row-main-t">5 Tips to Close More Deals This Quarter</div><div class="row-sub">Sales · Jun 2026</div></div></div>
+    <div class="row rowexp"><div><div class="row-main-t">Introducing the New Dashboard Widgets</div><div class="row-sub">Product · May 2026</div></div></div>
+  </div></div></section>
 
-                // Load recent contacts
-                renderRecentContacts((allContacts.items || []).slice(0, 5));
+  <section class="page" id="page-account"><div class="listhead"><h1>Account</h1></div><div class="widget"><div class="body" style="padding:22px">
+    <div id="acctSignedOut" style="color:var(--muted)">You are logged out. Sign in to manage your account and access your CRM data.</div>
+    <div id="acctSignedIn" hidden>
+      <p style="font-weight:700;font-size:16px;margin-bottom:6px"><span id="acctName"></span></p>
+      <p style="color:var(--muted)"><span id="acctEmail"></span></p>
+      <br><button class="btn btn-del" onclick="logout()">Log out</button>
+    </div>
+  </div></div></section>
+</main>
+<footer class="site-footer">
+  <div>© 2026 Nimbus CRM</div>
+  <nav class="footer-links" aria-label="Footer navigation">
+    <a href="#" data-page="contact">Contact us</a>
+    <a href="#" data-page="forums">Forums</a>
+    <a href="#" data-page="blog">Blog</a>
+  </nav>
+</footer>
 
-                // Load deals for charts
-                const dealsData = await api('/api/deals?per_page=1000');
-                renderCharts(dealsData.items || [], allContacts.items || []);
+<!-- ===== MODAL ===== -->
+<div class="overlay" id="overlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <h3 id="modalTitle">Title</h3>
+    <form id="modalForm"></form>
+  </div>
+</div>
 
-                // Update featured company if real data exists
-                updateFeaturedCompany(allContacts.items || []);
+<div class="toast" id="toast"></div>
 
-            } catch (e) {
-                console.error(e);
-            } finally {
-                showLoading(false);
-            }
-        }
+<script>
+/* ================= CONFIG ================= */
+const API = '/api';
+/* Fetch caps. Contacts double as the join table for names/form selects,
+   so they are fetched once and cached. Deals feed KPIs + Top Deals + both
+   charts, so one 500-row fetch replaces the original 1000-row-per-entity
+   download. Raise these if your dataset outgrows them. */
+const CONTACTS_CAP = 1000;
+const DEALS_CAP = 500;
 
-        function renderActivities(activities) {
-            const tbody = document.getElementById('activitiesBody');
-            if (!activities.length) {
-                tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No upcoming activities</td></tr>';
-                return;
-            }
-            tbody.innerHTML = activities.slice(0, 6).map(a => `
-                <tr>
-                    <td><span class="badge badge-${a.kind === 'Call' ? 'info' : a.kind === 'Email' ? 'warning' : 'neutral'}">${a.kind}</span></td>
-                    <td>${a.notes || '-'}</td>
-                    <td>${a.contact_id || '-'}</td>
-                    <td>${formatDate(a.happened_at)}</td>
-                </tr>
-            `).join('');
-        }
+/* ================= STATE ================= */
+let state = {
+  token: localStorage.getItem('crm_token') || null,
+  user: JSON.parse(localStorage.getItem('crm_user') || 'null'),
+  contacts: [], deals: [], recent: [],
+  page: {contacts:1, deals:1, activities:1}
+};
+const perPage = 8;
+let dashSeq = 0; // race guard: ignore stale dashboard responses
 
-        function renderRecentContacts(contacts) {
-            const container = document.getElementById('recentContacts');
-            if (!contacts.length) {
-                container.innerHTML = '<div class="empty-state">No contacts yet</div>';
-                return;
-            }
-            container.innerHTML = contacts.map(c => {
-                const color = avatarColor(c.name);
-                // Derive status from deals or default
-                const status = c.status || 'Lead';
-                return `
-                    <a href="contact_form.html?id=${c.id}" class="list-item">
-                        <div class="avatar ${color}">${initials(c.name)}</div>
-                        <div class="list-content">
-                            <h4>${c.name}</h4>
-                            <p>${c.company || 'No company'}</p>
-                        </div>
-                        <span class="badge ${statusBadge(status)}">${status}</span>
-                    </a>
-                `;
-            }).join('');
-        }
+/* ================= CACHE (GET responses, in-memory TTL) ================= */
+const _cache = new Map();
+async function apiCached(path, ttl = 30000){
+  const hit = _cache.get(path);
+  if(hit && Date.now() - hit.t < ttl) return hit.data;
+  const data = await api(path);
+  _cache.set(path, {t: Date.now(), data});
+  return data;
+}
+function clearCache(){ _cache.clear(); }
 
-        function renderCharts(deals, contacts) {
-            // Pipeline by stage (using status as stage proxy)
-            const stageMap = {};
-            deals.forEach(d => {
-                stageMap[d.status] = (stageMap[d.status] || 0) + d.value;
-            });
-            const stages = Object.keys(stageMap);
-            const stageValues = Object.values(stageMap);
+/* ================= HELPERS ================= */
+const $ = id => document.getElementById(id);
+function apiHeaders(){
+  const h = {'Content-Type':'application/json'};
+  if(state.token) h['Authorization'] = 'Bearer ' + state.token;
+  return h;
+}
+function asArray(value){
+  if(Array.isArray(value)) return value;
+  if(value && Array.isArray(value.items)) return value.items;
+  if(value && Array.isArray(value.data)) return value.data;
+  if(value && Array.isArray(value.results)) return value.results;
+  return [];
+}
+function totalOf(res, items){
+  const t = res && Number(res.total);
+  return Number.isFinite(t) && t > 0 ? t : items.length;
+}
+async function api(path, opts={}){
+  const res = await fetch(API + path, {headers: apiHeaders(), ...opts});
+  if(res.status === 401){ logout(true); throw new Error('Session expired'); }
+  if(!res.ok){
+    let msg = 'Request failed';
+    try{ const j = await res.json(); msg = j.message || msg; }catch(e){}
+    throw new Error(msg);
+  }
+  const ct = res.headers.get('content-type') || '';
+  return ct.includes('json') ? res.json() : res.text();
+}
+function toast(msg, type='ok'){
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  setTimeout(() => t.className = 'toast', 2600);
+}
+function esc(s){
+  return (s == null ? '' : String(s)).replace(/[&<>"']/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmtMoney(n){ return '$' + (Number(n) || 0).toLocaleString(undefined, {maximumFractionDigits:0}); }
+const pad2 = n => String(n).padStart(2,'0');
+function fmtDate(s){
+  if(!s) return '—';
+  const d = new Date(s);
+  if(isNaN(d)) return '—';
+  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; // local time, no UTC shift
+}
+function toLocalInput(s){
+  if(!s) return '';
+  const d = new Date(s);
+  if(isNaN(d)) return '';
+  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+function truncate(s, n){ s = s == null ? '' : String(s); return s.length > n ? s.slice(0, n-1) + '…' : s; }
+const avColor = (seed) => {
+  const colors = ['#4f6ef7','#8b5cf6','#25b57e','#f5a623','#e5484d','#06b6d4','#ec4899'];
+  let h = 0;
+  for(const c of String(seed)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return colors[h % colors.length];
+};
+const initials = n => (n || '?').split(' ').filter(Boolean).slice(0,2).map(w => w[0]).join('').toUpperCase();
+function contactName(id){
+  if(id == null || id === '') return '';
+  const c = state.contacts.find(x => String(x.id) === String(id));
+  return c ? c.name : '';
+}
+const DEAL_STATUSES = ['lead','prospect','open','won','lost'];
+const ACTIVITY_KINDS = ['Task','Call','Meeting','Email','Follow-up'];
 
-            const ctx1 = document.getElementById('pipelineChart').getContext('2d');
-            if (pipelineChart) pipelineChart.destroy();
-            pipelineChart = new Chart(ctx1, {
-                type: 'bar',
-                data: {
-                    labels: stages.length ? stages : ['Open', 'Won', 'Lost'],
-                    datasets: [{
-                        label: 'Value',
-                        data: stageValues.length ? stageValues : [0, 0, 0],
-                        backgroundColor: '#3B82F6',
-                        borderRadius: 6,
-                        barThickness: 40
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        y: { beginAtZero: true, grid: { color: '#F3F4F6' } },
-                        x: { grid: { display: false } }
-                    }
-                }
-            });
+/* ================= NAVIGATION & AUTH UI ================= */
+document.querySelectorAll('[data-page]').forEach(a => {
+  a.addEventListener('click', e => { e.preventDefault(); showPage(a.dataset.page); });
+});
+function showPage(name){
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  const page = $('page-' + name);
+  if(!page) return;
+  page.classList.add('active');
+  window.scrollTo(0,0);
+  document.querySelectorAll('#mainMenu a[data-page]').forEach(a =>
+    a.classList.toggle('active', a.dataset.page === name));
+  if(name === 'deals') loadDeals();
+  if(name === 'contacts') loadContacts();
+  if(name === 'activities') loadActivities();
+}
+function updateAuthUI(){
+  const authed = !!state.token;
+  const btn = $('authBtn');
+  const pill = $('userPill');
+  if(authed){
+    btn.textContent = 'Log out';
+    btn.onclick = e => { e.preventDefault(); logout(); };
+    pill.hidden = false;
+    $('userName').textContent = (state.user && state.user.name) || 'User';
+    $('userAvatar').textContent = initials(state.user && state.user.name);
+    $('acctSignedOut').hidden = true;
+    $('acctSignedIn').hidden = false;
+    $('acctName').textContent = (state.user && state.user.name) || '';
+    $('acctEmail').textContent = (state.user && state.user.email) || '';
+  } else {
+    btn.textContent = 'Log in';
+    btn.onclick = e => { e.preventDefault(); openModal('login'); };
+    pill.hidden = true;
+    $('acctSignedOut').hidden = false;
+    $('acctSignedIn').hidden = true;
+  }
+}
 
-            // Contacts by status (mocked distribution based on company presence)
-            const hasCompany = contacts.filter(c => c.company).length;
-            const noCompany = contacts.length - hasCompany;
-            const ctx2 = document.getElementById('contactsChart').getContext('2d');
-            if (contactsChart) contactsChart.destroy();
-            contactsChart = new Chart(ctx2, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Customer', 'Lead', 'Prospect'],
-                    datasets: [{
-                        data: [hasCompany || 1, noCompany || 1, Math.floor(contacts.length / 3) || 1],
-                        backgroundColor: ['#3B82F6', '#F59E0B', '#EF4444'],
-                        borderWidth: 0,
-                        cutout: '60%'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { position: 'bottom', labels: { usePointStyle: true, padding: 16 } }
-                    }
-                }
-            });
-        }
+/* ================= GLOBAL SEARCH ================= */
+let searchTimer;
+$('globalSearch').addEventListener('input', e => {
+  clearTimeout(searchTimer);
+  const q = e.target.value.trim();
+  if(!q || !state.token){ $('srchDrop').classList.remove('open'); return; }
+  searchTimer = setTimeout(async () => {
+    try{
+      const data = await api('/search?q=' + encodeURIComponent(q));
+      const items = [];
+      (data.contacts || []).slice(0,4).forEach(c => items.push({type:'Contact', kind:'contact', id:c.id, title:c.name, sub:c.email, page:'contacts'}));
+      (data.deals || []).slice(0,4).forEach(d => items.push({type:'Deal', kind:'deal', id:d.id, title:d.title, sub:d.status, page:'deals'}));
+      renderSearchDrop(items);
+    }catch(err){ $('srchDrop').classList.remove('open'); }
+  }, 300);
+});
+function renderSearchDrop(items){
+  const drop = $('srchDrop');
+  if(!items.length){
+    drop.innerHTML = '<div class="srch-item"><div class="s">No results found</div></div>';
+    drop.classList.add('open');
+    return;
+  }
+  drop.innerHTML = items.map(it => `
+    <div class="srch-item" data-page="${esc(it.page)}" data-kind="${esc(it.kind)}" data-id="${esc(String(it.id))}">
+      <span class="srch-type">${it.type}</span>
+      <span class="t">${esc(it.title)}</span>
+      <div class="s">${esc(it.sub)}</div>
+    </div>`).join('');
+  drop.classList.add('open');
+}
+$('srchDrop').addEventListener('click', e => {
+  const it = e.target.closest('.srch-item');
+  if(!it || !it.dataset.kind) return;
+  $('srchDrop').classList.remove('open');
+  $('globalSearch').value = '';
+  showPage(it.dataset.page);
+  openModal(it.dataset.kind, it.dataset.id); // open the matched record, not just its list
+});
+document.addEventListener('click', e => {
+  if(!e.target.closest('.searchwrap')) $('srchDrop').classList.remove('open');
+});
 
-        function updateFeaturedCompany(contacts) {
-            const withCompany = contacts.filter(c => c.company);
-            if (!withCompany.length) return;
-            const c = withCompany[0];
-            const el = document.getElementById('featuredCompany');
-            el.querySelector('h3').innerHTML = `${c.company} <span class="badge badge-warning">Trading</span>`;
-            el.querySelector('.company-url').textContent = c.email || 'No website';
-            el.querySelector('.company-url').href = c.email ? `mailto:${c.email}` : '#';
-            const meta = el.querySelector('.company-meta');
-            meta.innerHTML = `
-                <div class="company-meta-item"><span>&#9993;</span><span>${c.email || 'N/A'}</span></div>
-                <div class="company-meta-item"><span>&#9742;</span><span>${c.phone || 'N/A'}</span></div>
-                <div class="company-meta-item"><span>&#128205;</span><span>${c.notes || 'N/A'}</span></div>
-            `;
-        }
+/* ================= AUTH (no page reloads — everything updates in place) ================= */
+async function login(email, password){
+  const res = await fetch(API + '/auth/login', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({email, password})
+  });
+  if(!res.ok){ const j = await res.json().catch(() => ({})); throw new Error(j.message || 'Invalid credentials'); }
+  const j = await res.json();
+  state.token = j.access_token || j.token;
+  localStorage.setItem('crm_token', state.token);
+  clearCache();
+  state.user = await api('/auth/me').catch(() => ({name: email.split('@')[0], email}));
+  localStorage.setItem('crm_user', JSON.stringify(state.user));
+  updateAuthUI();
+  toast('Welcome, ' + (state.user.name || 'back') + '!');
+  await loadDashboard();
+  showPage('dashboard');
+}
+async function register(name, email, password){
+  const res = await fetch(API + '/auth/register', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({name, email, password})
+  });
+  if(!res.ok){ const j = await res.json().catch(() => ({})); throw new Error(j.message || 'Registration failed'); }
+  const j = await res.json();
+  state.token = j.access_token || j.token;
+  localStorage.setItem('crm_token', state.token);
+  clearCache();
+  state.user = await api('/auth/me').catch(() => ({name, email}));
+  localStorage.setItem('crm_user', JSON.stringify(state.user));
+  updateAuthUI();
+  toast('Account created. Welcome!');
+  await loadDashboard();
+  showPage('dashboard');
+}
+function logout(silent){
+  localStorage.removeItem('crm_token');
+  localStorage.removeItem('crm_user');
+  state.token = null;
+  state.user = null;
+  state.contacts = []; state.deals = []; state.recent = [];
+  clearCache();
+  updateAuthUI();
+  renderSignedOutDashboard();
+  showPage('dashboard');
+  if(!silent) toast('Logged out', 'err');
+}
 
-        loadDashboard();
-    </script>
+/* ================= MODALS ================= */
+let modalType = null, editingId = null;
+async function openModal(type, id){
+  modalType = type;
+  editingId = id;
+  // Deal and activity forms need the contact list for their selects.
+  if((type === 'deal' || type === 'activity') && state.token && !state.contacts.length){
+    await loadDashboard().catch(() => {});
+  }
+  // Records outside the cached pages/deal-cap are fetched individually.
+  let rec = {};
+  if(id){
+    rec = findRec(type, id) || {};
+    if(!Object.keys(rec).length && state.token){
+      rec = await api(`/${type}s/${id}`).catch(() => ({}));
+    }
+  }
+  $('modalForm').innerHTML = buildFormHTML(type, rec, !!id);
+  $('modalTitle').textContent = titleFor(type, !!id);
+  $('overlay').classList.add('open');
+  const first = $('modalForm').querySelector('input, select, textarea');
+  if(first) first.focus();
+}
+function titleFor(type, isEdit){
+  const map = {
+    contact:['Add Contact','Edit Contact'],
+    deal:['Add Deal','Edit Deal'],
+    activity:['Add Activity','Edit Activity'],
+    login:['Log in','Log in'],
+    register:['Create Account','Create Account']
+  };
+  return map[type] ? map[type][isEdit ? 1 : 0] : 'Form';
+}
+function findRec(type, id){
+  const arr =
+    type === 'contact' ? state.contacts :
+    type === 'deal' ? state.deals :
+    type === 'activity' ? state.recent :
+    [];
+  return asArray(arr).find(x => String(x.id) === String(id));
+}
+function contactOptions(selectedId){
+  return state.contacts.map(c =>
+    `<option value="${esc(String(c.id))}" ${String(selectedId||'') === String(c.id) ? 'selected' : ''}>${esc(c.name)}</option>`
+  ).join('');
+}
+function buildFormHTML(type, rec, isEdit){
+  const submit = isEdit ? 'Save changes' : null;
+  if(type === 'login'){
+    return `
+      <div class="field"><label>Email</label><input name="email" type="email" required /></div>
+      <div class="field"><label>Password</label><input name="password" type="password" required /></div>
+      <div class="field" style="font-size:13px;color:var(--brand);cursor:pointer" onclick="switchToRegister()">New here? Create an account →</div>
+      <div class="mfoot"><button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" type="submit">Log in</button></div>`;
+  }
+  if(type === 'register'){
+    return `
+      <div class="field"><label>Full name</label><input name="name" required /></div>
+      <div class="field"><label>Email</label><input name="email" type="email" required /></div>
+      <div class="field"><label>Password</label><input name="password" type="password" required /></div>
+      <div class="field" style="font-size:13px;color:var(--brand);cursor:pointer" onclick="switchToLogin()">Already have an account? Log in →</div>
+      <div class="mfoot"><button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" type="submit">Create account</button></div>`;
+  }
+  if(type === 'contact'){
+    return `
+      <div class="field"><label>Full name</label><input name="name" value="${esc(rec.name)}" required /></div>
+      <div class="field"><label>Email</label><input name="email" type="email" value="${esc(rec.email)}" /></div>
+      <div class="field"><label>Phone</label><input name="phone" value="${esc(rec.phone)}" /></div>
+      <div class="field"><label>Company</label><input name="company" value="${esc(rec.company)}" /></div>
+      <div class="field"><label>Notes</label><textarea name="notes" rows="3">${esc(rec.notes)}</textarea></div>
+      <div class="mfoot"><button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" type="submit">${submit || 'Add contact'}</button></div>`;
+  }
+  if(type === 'deal'){
+    const st = DEAL_STATUSES.map(s =>
+      `<option value="${s}" ${String(rec.status||'lead') === s ? 'selected' : ''}>${s}</option>`).join('');
+    return `
+      <div class="field"><label>Deal title</label><input name="title" value="${esc(rec.title)}" required /></div>
+      <div class="field"><label>Contact</label><select name="contact_id"><option value="">— none —</option>${contactOptions(rec.contact_id)}</select></div>
+      <div class="field"><label>Value (USD)</label><input name="value" type="number" step="0.01" min="0" value="${rec.value != null ? esc(String(rec.value)) : ''}" /></div>
+      <div class="field"><label>Status</label><select name="status">${st}</select></div>
+      <div class="field"><label>Notes</label><textarea name="notes" rows="3">${esc(rec.notes)}</textarea></div>
+      <div class="mfoot"><button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" type="submit">${submit || 'Add deal'}</button></div>`;
+  }
+  if(type === 'activity'){
+    const kinds = ACTIVITY_KINDS.map(k =>
+      `<option value="${k}" ${String(rec.kind||'Task').toLowerCase() === k.toLowerCase() ? 'selected' : ''}>${k}</option>`).join('');
+    return `
+      <div class="field"><label>Type</label><select name="kind">${kinds}</select></div>
+      <div class="field"><label>Notes</label><textarea name="notes" rows="3">${esc(rec.notes)}</textarea></div>
+      <div class="field"><label>When</label><input name="happened_at" type="datetime-local" value="${esc(toLocalInput(rec.happened_at))}" required /></div>
+      <div class="field"><label>Contact</label><select name="contact_id"><option value="">— none —</option>${contactOptions(rec.contact_id)}</select></div>
+      <div class="mfoot"><button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" type="submit">${submit || 'Add activity'}</button></div>`;
+  }
+  return '';
+}
+function closeModal(){
+  $('overlay').classList.remove('open');
+  modalType = null;
+  editingId = null;
+}
+
+/* ===== LOGIN/REGISTER SWITCH ===== */
+function switchToRegister(){ openModal('register'); }
+function switchToLogin(){ openModal('login'); }
+
+$('overlay').addEventListener('click', e => { if(e.target.id === 'overlay') closeModal(); });
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape' && $('overlay').classList.contains('open')) closeModal();
+});
+$('modalForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const body = Object.fromEntries(fd.entries());
+  try{
+    if(modalType === 'login'){
+      await login(body.email, body.password);
+    } else if(modalType === 'register'){
+      await register(body.name, body.email, body.password);
+    } else if(modalType === 'contact'){
+      await saveRecord('contacts', {
+        name: body.name,
+        email: body.email || null,
+        phone: body.phone || null,
+        company: body.company || null,
+        notes: body.notes || null
+      }, editingId);
+    } else if(modalType === 'deal'){
+      await saveRecord('deals', {
+        title: body.title,
+        contact_id: body.contact_id || null,
+        value: body.value === '' ? null : Number(body.value),
+        status: body.status,
+        notes: body.notes || null
+      }, editingId);
+    } else if(modalType === 'activity'){
+      await saveRecord('activities', {
+        kind: body.kind,
+        notes: body.notes || null,
+        happened_at: body.happened_at,
+        contact_id: body.contact_id || null
+      }, editingId);
+    }
+    closeModal();
+  }catch(err){ toast(err.message, 'err'); }
+});
+
+async function saveRecord(kind, payload, id){
+  const isEdit = !!id;
+  await api(isEdit ? `/${kind}/${id}` : `/${kind}`, {
+    method: isEdit ? 'PUT' : 'POST',
+    body: JSON.stringify(payload)
+  });
+  clearCache(); // invalidate cached lists/summary so the next read is fresh
+  toast(isEdit ? 'Updated successfully' : 'Created successfully');
+  await refreshAll();
+}
+async function deleteRecord(kind, id){
+  if(!confirm('Delete this record?')) return;
+  await api(`/${kind}/${id}`, {method:'DELETE'});
+  clearCache();
+  toast('Deleted', 'err');
+  await refreshAll();
+}
+
+/* ================= DATA LOADERS ================= */
+async function refreshAll(){
+  await Promise.all([loadDashboard(), loadContacts(), loadDeals(), loadActivities()]);
+}
+function renderSignedOutDashboard(){
+  $('kpiContacts').textContent = '0';
+  $('kpiDeals').textContent = '0';
+  $('kpiWon').textContent = '0';
+  $('kpiActivities').textContent = '0';
+  renderTopDeals([]);
+  renderRecent([]);
+  renderCharts([]);
+}
+async function loadDashboard(){
+  if(!state.token){ renderSignedOutDashboard(); return; }
+  const seq = ++dashSeq; // drop stale responses if two loads race
+  const [contacts, deals, recent, actCount] = await Promise.all([
+    apiCached(`/contacts?page=1&per_page=${CONTACTS_CAP}`, 300000),
+    apiCached(`/deals?page=1&per_page=${DEALS_CAP}`, 60000),
+    api('/activities/recent').catch(() => []),
+    apiCached('/activities?page=1&per_page=1', 60000).catch(() => null)
+  ]);
+  if(seq !== dashSeq) return;
+  state.contacts = asArray(contacts);
+  state.deals = asArray(deals);
+  state.recent = asArray(recent);
+
+  $('kpiContacts').textContent = state.contacts.length;
+  $('kpiDeals').textContent = state.deals.length;
+  $('kpiWon').textContent = state.deals.filter(d => String(d.status).toLowerCase() === 'won').length;
+  // Exact total from the API's `total` field; fall back to the recent list length.
+  $('kpiActivities').textContent = Math.max(state.recent.length, totalOf(actCount, []));
+
+  renderTopDeals([...state.deals]
+    .sort((a,b) => (Number(b.value) || 0) - (Number(a.value) || 0))
+    .slice(0, 10));
+  renderRecent(state.recent);
+  renderCharts(state.deals);
+}
+
+function renderRecent(activities){
+  const box = $('recentList');
+  if(!activities.length){ box.innerHTML = '<div class="empty">No activities yet</div>'; return; }
+  box.innerHTML = activities.map(a => {
+    const cn = contactName(a.contact_id);
+    const sub = [a.kind || 'Activity', cn ? '· ' + cn : ''].filter(Boolean).join(' ');
+    return `
+    <div class="row">
+      <div class="av" style="background:${avColor(a.kind || 'A')}">${initials(a.kind || 'A')}</div>
+      <div><div class="row-main-t">${esc(truncate(a.notes, 60)) || '(no notes)'}</div>
+      <div class="row-sub">${esc(sub)}</div></div>
+      <div class="row-right"><span class="chip st-prospect">${esc(fmtDate(a.happened_at))}</span></div>
+    </div>`;
+  }).join('');
+}
+
+function renderTopDeals(deals){
+  const box = $('dealList');
+  if(!deals.length){ box.innerHTML = '<div class="empty">No deals yet</div>'; return; }
+  box.innerHTML = deals.map(d => {
+    const cn = contactName(d.contact_id);
+    return `
+    <div class="row">
+      <div class="av" style="background:${avColor(cn || d.title)}">${initials(cn || d.title)}</div>
+      <div><div class="row-main-t">${esc(d.title)}</div>
+      <div class="row-sub">${esc(cn || 'No contact')}</div></div>
+      <div class="row-right"><div class="amt">${fmtMoney(d.value)}</div>
+      <span class="chip st-${esc(String(d.status || 'lead').toLowerCase())}">${esc(d.status || 'lead')}</span></div>
+    </div>`;
+  }).join('');
+}
+
+/* ================= CHARTS (inline SVG — zero dependencies) ================= */
+const CHART_COLORS = ['#8b5cf6','#4f6ef7','#f5a623','#25b57e','#e5484d'];
+
+function barSVG(labels, values, colors){
+  const max = Math.max(1, ...values);
+  const H = 190, base = H - 30, bw = 34, gap = 18;
+  let bars = '', x = 14;
+  labels.forEach((lb, i) => {
+    const h = Math.round(values[i] / max * (base - 16));
+    const y = base - h;
+    bars += `<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="5" fill="${colors[i]}"><title>${esc(lb)}: ${values[i]} deals</title></rect>`;
+    bars += `<text x="${x + bw/2}" y="${y - 6}" text-anchor="middle" font-size="11" font-weight="700" fill="#1f2733">${values[i]}</text>`;
+    bars += `<text x="${x + bw/2}" y="${base + 16}" text-anchor="middle" font-size="10" fill="#6b7686">${esc(lb)}</text>`;
+    x += bw + gap;
+  });
+  return `<svg viewBox="0 0 280 ${H}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Deal pipeline by status">${bars}</svg>`;
+}
+
+function donutSVG(entries){
+  if(!entries.length) return '<div class="empty">No deal values yet</div>';
+  const total = entries.reduce((s, e) => s + e[1], 0);
+  const r = 44, C = 2 * Math.PI * r;
+  let off = 0, segs = '';
+  entries.slice(0, 8).forEach((e, i) => {
+    const len = Math.max(0, e[1] / total * C - 2); // 2px gap between segments
+    segs += `<circle cx="70" cy="70" r="${r}" fill="none" stroke="${avColor('cp' + i)}" stroke-width="26"`
+          + ` stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}">`
+          + `<title>${esc(e[0])}: ${fmtMoney(e[1])}</title></circle>`;
+    off += e[1] / total * C;
+  });
+  const legend = entries.slice(0, 8).map((e, i) =>
+    `<span class="lg"><span class="dot" style="background:${avColor('cp' + i)}"></span>${esc(e[0])} · ${Math.round(e[1]/total*100)}%</span>`
+  ).join('');
+  return `<svg viewBox="0 0 140 140" width="100%" style="max-height:150px" role="img" aria-label="Deal value by contact">`
+       + `<g transform="rotate(-90 70 70)">${segs}</g>`
+       + `<text x="70" y="75" text-anchor="middle" font-size="12" font-weight="800" fill="#1f2733">${esc(fmtMoney(total))}</text></svg>`
+       + `<div class="lgwrap">${legend}</div>`;
+}
+
+function renderCharts(deals){
+  const labels = ['Lead','Prospect','Open','Won','Lost'];
+  const keys = ['lead','prospect','open','won','lost'];
+  const counts = [0,0,0,0,0];
+  deals.forEach(d => {
+    const i = keys.indexOf(String(d.status || 'lead').toLowerCase());
+    counts[i < 0 ? 0 : i]++; // unknown status rolls into Lead rather than vanishing
+  });
+  $('histChart').innerHTML = barSVG(labels, counts, CHART_COLORS);
+
+  const totals = {};
+  deals.forEach(d => {
+    const nm = contactName(d.contact_id) || 'No contact';
+    totals[nm] = (totals[nm] || 0) + (Number(d.value) || 0);
+  });
+  const entries = Object.entries(totals).filter(([,v]) => v > 0).sort((a,b) => b[1] - a[1]);
+  $('pieChart').innerHTML = donutSVG(entries);
+}
+
+/* ================= LISTS & TABLES ================= */
+const STATUS_CHIP_CLASS = {lead:'st-lead', prospect:'st-prospect', open:'st-open', won:'st-won', lost:'st-lost'};
+function statusChip(s){
+  const raw = String(s || 'lead');
+  const cls = STATUS_CHIP_CLASS[raw.toLowerCase()] || 'st-lead';
+  return `<span class="chip ${cls}">${esc(raw)}</span>`;
+}
+function actions(kind, id){
+  return `<div class="cell-actions">
+    <button class="btn btn-sm btn-edit" data-act="edit" data-kind="${esc(kind)}" data-id="${esc(String(id))}">Edit</button>
+    <button class="btn btn-sm btn-del" data-act="del" data-kind="${esc(kind)}" data-id="${esc(String(id))}">Delete</button>
+  </div>`;
+}
+// Delegated handler — ids travel via data attributes, never interpolated into handlers.
+document.addEventListener('click', e => {
+  const b = e.target.closest('button[data-act]');
+  if(!b) return;
+  if(b.dataset.act === 'edit') openModal(b.dataset.kind, b.dataset.id);
+  else if(b.dataset.act === 'del') deleteRecord(b.dataset.kind, b.dataset.id);
+});
+
+async function loadDeals(){
+  if(!state.token){
+    renderTable('dealsTable', ['Deal','Contact','Value','Status','Actions'], [], 'Log in to view deals');
+    $('dealsPager').innerHTML = '';
+    return;
+  }
+  const p = state.page.deals;
+  const res = await apiCached(`/deals?page=${p}&per_page=${perPage}`).catch(() => null);
+  if(res === null){ renderTable('dealsTable', ['Deal','Contact','Value','Status','Actions'], [], 'Failed to load deals'); return; }
+  const items = asArray(res);
+  renderTable('dealsTable', ['Deal','Contact','Value','Status','Actions'],
+    items.map(d => [
+      `<b>${esc(d.title)}</b>`,
+      esc(contactName(d.contact_id) || '—'),
+      fmtMoney(d.value),
+      statusChip(d.status),
+      actions('deal', d.id)
+    ]));
+  renderPager('dealsPager', p, totalOf(res, items), async np => { state.page.deals = np; await loadDeals(); });
+}
+
+async function loadContacts(){
+  if(!state.token){
+    renderTable('contactsTable', ['Name','Email','Phone','Company','Actions'], [], 'Log in to view contacts');
+    $('contactsPager').innerHTML = '';
+    return;
+  }
+  const p = state.page.contacts;
+  const res = await apiCached(`/contacts?page=${p}&per_page=${perPage}`).catch(() => null);
+  if(res === null){ renderTable('contactsTable', ['Name','Email','Phone','Company','Actions'], [], 'Failed to load contacts'); return; }
+  const items = asArray(res);
+  renderTable('contactsTable', ['Name','Email','Phone','Company','Actions'],
+    items.map(c => [
+      `<b>${esc(c.name)}</b>`,
+      esc(c.email || '—'),
+      esc(c.phone || '—'),
+      esc(c.company || '—'),
+      actions('contact', c.id)
+    ]));
+  renderPager('contactsPager', p, totalOf(res, items), async np => { state.page.contacts = np; await loadContacts(); });
+}
+
+async function loadActivities(){
+  if(!state.token){
+    renderTable('activitiesTable', ['Activity','Type','When','Contact','Actions'], [], 'Log in to view activities');
+    $('activitiesPager').innerHTML = '';
+    return;
+  }
+  const p = state.page.activities;
+  const res = await apiCached(`/activities?page=${p}&per_page=${perPage}`).catch(() => null);
+  if(res === null){ renderTable('activitiesTable', ['Activity','Type','When','Contact','Actions'], [], 'Failed to load activities'); return; }
+  const items = asArray(res);
+  if(!state.contacts.length) await loadDashboard().catch(() => {}); // for the contact-name column
+  renderTable('activitiesTable', ['Activity','Type','When','Contact','Actions'],
+    items.map(a => [
+      esc(truncate(a.notes, 60)) || '<span style="color:var(--muted)">(no notes)</span>',
+      esc(a.kind || '—'),
+      esc(fmtDate(a.happened_at)),
+      esc(contactName(a.contact_id) || '—'),
+      actions('activity', a.id)
+    ]));
+  renderPager('activitiesPager', p, totalOf(res, items), async np => { state.page.activities = np; await loadActivities(); });
+}
+
+function renderTable(id, headers, rows, emptyMsg){
+  const tbl = $(id);
+  if(!tbl) return;
+  const head = `<thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>`;
+  if(!rows.length){
+    tbl.innerHTML = head + `<tbody><tr><td colspan="${headers.length}"><div class="empty">${esc(emptyMsg || 'No records found')}</div></td></tr></tbody>`;
+    return;
+  }
+  tbl.innerHTML = head + `<tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>`;
+}
+
+function renderPager(id, p, total, cb){
+  const pager = $(id);
+  if(!pager) return;
+  const pages = Math.max(1, Math.ceil(total / perPage));
+  pager.innerHTML = '';
+  const prev = document.createElement('button');
+  prev.textContent = '‹ Prev';
+  prev.disabled = p <= 1;
+  prev.onclick = () => { if(p > 1) cb(p - 1); };
+  const info = document.createElement('span');
+  info.className = 'info';
+  info.textContent = `Page ${p} of ${pages} · ${total} record(s)`;
+  const next = document.createElement('button');
+  next.textContent = 'Next ›';
+  next.disabled = p >= pages;
+  next.onclick = () => { if(p < pages) cb(p + 1); };
+  pager.append(prev, info, next);
+}
+
+/* ================= INIT =================
+   No timer polling: refresh the dashboard when the user returns to the
+   tab instead. Cached responses make this nearly free. */
+async function init(){
+  updateAuthUI();
+  if(state.token){
+    try{ await loadDashboard(); }
+    catch(e){ console.error('Dashboard initialization failed:', e); }
+  } else {
+    renderSignedOutDashboard();
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  if(!document.hidden && state.token) loadDashboard().catch(() => {});
+});
+init();
+</script>
 </body>
 </html>

@@ -1,21 +1,49 @@
-from flask import Flask, jsonify, send_from_directory
 import os
+import logging
+from datetime import datetime
+
+from flask import Flask, jsonify, send_from_directory, request
 
 from app.config import Config
 from app.extensions import db, migrate, jwt, cors
 
 
 def create_app():
-    app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
+    app = Flask(
+        __name__, static_folder=os.path.join(os.path.dirname(__file__), "static")
+    )
     app.config.from_object(Config)
 
-    # Initialize extensions
+    # Production logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    )
+
+    # Extensions
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
-    cors.init_app(app)
+    cors.init_app(
+        app,
+        supports_credentials=True,
+        origins=os.getenv("CORS_ORIGINS", "*").split(","),
+    )
 
-    # Register blueprints
+    # JWT error handlers
+    @jwt.expired_token_loader
+    def expired_token_callback(jwt_header, jwt_payload):
+        return jsonify({"error": "Token expired", "message": "Please log in again"}), 401
+
+    @jwt.invalid_token_loader
+    def invalid_token_callback(error):
+        return jsonify({"error": "Invalid token", "message": str(error)}), 401
+
+    @jwt.unauthorized_loader
+    def missing_token_callback(error):
+        return jsonify({"error": "Unauthorized", "message": str(error)}), 401
+
+    # Blueprints
     from app.routes.auth import auth_bp
     from app.routes.health import health_bp
     from app.routes.contacts import contacts_bp
@@ -30,49 +58,41 @@ def create_app():
     app.register_blueprint(activities_bp)
     app.register_blueprint(search_bp)
 
-    # Register CLI commands
-    #from app.cli import seed, import_contacts
-    #app.cli.add_command(seed)
-    #app.cli.add_command(import_contacts)
-
-    # Serve static files
-    @app.get("/static/<path:filename>")
-    def serve_static(filename):
-        return send_from_directory(app.static_folder, filename)
-
-    # Root index route - serve index.html
+    # Static / SPA
     @app.get("/")
     def index():
-        return send_from_directory(app.static_folder, 'index.html')
+        return send_from_directory(app.static_folder, "index.html")
 
-    # Catch-all route for SPA navigation - serve index.html for unmapped routes
     @app.get("/<path:path>")
     def catch_all(path):
-        # Check if it's a static file request
-        if os.path.isfile(os.path.join(app.static_folder, path)):
+        target = os.path.join(app.static_folder, path)
+        if os.path.isfile(target):
             return send_from_directory(app.static_folder, path)
-        # Otherwise serve index.html for SPA routing
-        return send_from_directory(app.static_folder, 'index.html')
+        return send_from_directory(app.static_folder, "index.html")
 
-    # Register 404 error handler (for API routes that don't match)
+    # Error handlers
     @app.errorhandler(404)
     def not_found(error):
-        return jsonify({
-            "error": "Not Found",
-            "message": "The requested resource does not exist"
-        }), 404
+        if request.path.startswith("/api/"):
+            return (
+                jsonify(
+                    {"error": "Not Found", "message": "The requested resource does not exist"}
+                ),
+                404,
+            )
+        return send_from_directory(app.static_folder, "index.html")
 
-    # Register 500 error handler
     @app.errorhandler(500)
     def internal_error(error):
-        return jsonify({
-            "error": "Internal Server Error",
-            "message": "An unexpected error occurred"
-        }), 500
-
-    with app.app_context():
-        db.create_all()
+        app.logger.exception("Unhandled exception")
+        return (
+            jsonify(
+                {
+                    "error": "Internal Server Error",
+                    "message": "An unexpected error occurred",
+                }
+            ),
+            500,
+        )
 
     return app
-
-

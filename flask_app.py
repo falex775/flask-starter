@@ -1,8 +1,9 @@
+import os
+os.environ.setdefault('SECRET_KEY', 'test-key')
+
 from app import create_app
 
 app = create_app()
 
-
 if __name__ == "__main__":
     app.run(debug=True)
-
