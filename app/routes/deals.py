@@ -5,6 +5,7 @@ from sqlalchemy import func
 from app.extensions import db
 from app.models.deal import Deal
 from app.models.contact import Contact
+from app.models.activity import Activity
 
 deals_bp = Blueprint("deals", __name__, url_prefix="/api/deals")
 
@@ -37,6 +38,19 @@ def list_deals():
             "total": pagination.total,
         }
     )
+
+
+@deals_bp.get("/<int:id>/timeline")
+@jwt_required()
+def deal_timeline(id):
+    uid = int(get_jwt_identity())
+    Deal.query.filter_by(id=id, user_id=uid).first_or_404()
+    activities = (
+        Activity.query.filter_by(user_id=uid, deal_id=id)
+        .order_by(Activity.happened_at.desc(), Activity.id.desc())
+        .all()
+    )
+    return jsonify([activity.to_dict() for activity in activities])
 
 
 @deals_bp.get("/<int:id>")
