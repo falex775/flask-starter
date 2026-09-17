@@ -4,6 +4,7 @@ from sqlalchemy import or_
 
 from app.extensions import db
 from app.models.contact import Contact
+from app.models.activity import Activity
 
 contacts_bp = Blueprint("contacts", __name__, url_prefix="/api/contacts")
 
@@ -40,6 +41,19 @@ def list_contacts():
             "total": pagination.total,
         }
     )
+
+
+@contacts_bp.get("/<int:id>/timeline")
+@jwt_required()
+def contact_timeline(id):
+    user_id = int(get_jwt_identity())
+    Contact.query.filter_by(id=id, user_id=user_id).first_or_404()
+    activities = (
+        Activity.query.filter_by(user_id=user_id, contact_id=id)
+        .order_by(Activity.happened_at.desc(), Activity.id.desc())
+        .all()
+    )
+    return jsonify([activity.to_dict() for activity in activities])
 
 
 @contacts_bp.get("/<int:id>")
