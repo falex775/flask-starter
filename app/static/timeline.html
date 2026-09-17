@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Timeline · CRM</title>
+  <style>
+    :root { --bg:#f4f6fb; --card:#fff; --ink:#1f2733; --muted:#6b7686; --line:#e5e9f2; --brand:#4f6ef7; }
+    * { box-sizing:border-box; }
+    body { margin:0; font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; background:var(--bg); color:var(--ink); }
+    a { color:var(--brand); text-decoration:none; }
+    .topbar { background:var(--card); border-bottom:1px solid var(--line); padding:16px 22px; }
+    .topbar a { color:var(--ink); font-weight:800; }
+    main { max-width:900px; margin:0 auto; padding:28px 22px; }
+    .head { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:20px; }
+    h1 { margin:0; font-size:24px; }
+    .sub { color:var(--muted); margin-top:5px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+    .activity { display:grid; grid-template-columns:12px 1fr auto; gap:14px; padding:18px; border-bottom:1px solid var(--line); }
+    .activity:last-child { border-bottom:0; }
+    .dot { width:10px; height:10px; margin-top:5px; border-radius:50%; background:var(--brand); }
+    .kind { font-weight:700; }
+    .notes { margin-top:6px; white-space:pre-wrap; }
+    .date { color:var(--muted); white-space:nowrap; font-size:12px; }
+    .empty, .error { padding:42px 20px; text-align:center; color:var(--muted); }
+    .error { color:#e5484d; }
+    @media (max-width:600px) { .activity { grid-template-columns:12px 1fr; } .date { grid-column:2; } }
+  </style>
+</head>
+<body>
+  <header class="topbar"><a href="/">◈ CRM</a></header>
+  <main>
+    <div class="head">
+      <div><h1 id="title">Timeline</h1><div class="sub" id="subtitle">Loading activities…</div></div>
+      <a href="/">Back to CRM</a>
+    </div>
+    <section class="card" id="timeline" aria-live="polite"><div class="empty">Loading activities…</div></section>
+  </main>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const type = params.get('type');
+    const id = params.get('id');
+    const token = localStorage.getItem('crm_token');
+    const timeline = document.getElementById('timeline');
+    const title = document.getElementById('title');
+    const subtitle = document.getElementById('subtitle');
+
+    function esc(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function formatDate(value) {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
+    }
+    async function loadTimeline() {
+      if (!['contacts', 'deals'].includes(type) || !/^\d+$/.test(id || '')) {
+        timeline.innerHTML = '<div class="error">Invalid timeline link.</div>';
+        return;
+      }
+      const endpoint = `/api/${type}/${id}/timeline`;
+      try {
+        const response = await fetch(endpoint, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+        if (!response.ok) throw new Error(response.status === 401 ? 'Please log in to view this timeline.' : 'Unable to load this timeline.');
+        const activities = await response.json();
+        const label = type === 'contacts' ? 'Contact' : 'Deal';
+        title.textContent = `${label} timeline`;
+        subtitle.textContent = `${activities.length} activit${activities.length === 1 ? 'y' : 'ies'} · newest first`;
+        timeline.innerHTML = activities.length ? activities.map(activity => `
+          <article class="activity">
+            <span class="dot" aria-hidden="true"></span>
+            <div><div class="kind">${esc(activity.kind || 'Activity')}</div><div class="notes">${esc(activity.notes || '(no notes)')}</div></div>
+            <time class="date" datetime="${esc(activity.happened_at)}">${esc(formatDate(activity.happened_at))}</time>
+          </article>`).join('') : '<div class="empty">No activities yet.</div>';
+      } catch (error) {
+        timeline.innerHTML = `<div class="error">${esc(error.message)}</div>`;
+        subtitle.textContent = '';
+      }
+    }
+    loadTimeline();
+  </script>
+</body>
+</html>
