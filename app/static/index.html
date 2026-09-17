@@ -852,7 +852,7 @@ async function loadDeals(){
   const items = asArray(res);
   renderTable('dealsTable', ['Deal','Contact','Value','Status','Actions'],
     items.map(d => [
-      `<b>${esc(d.title)}</b>`,
+      `<a href="/timeline.html?type=deals&id=${d.id}">${esc(d.title)}</a>`,
       esc(contactName(d.contact_id) || '—'),
       fmtMoney(d.value),
       statusChip(d.status),
@@ -873,7 +873,7 @@ async function loadContacts(){
   const items = asArray(res);
   renderTable('contactsTable', ['Name','Email','Phone','Company','Actions'],
     items.map(c => [
-      `<b>${esc(c.name)}</b>`,
+      `<a href="/timeline.html?type=contacts&id=${c.id}">${esc(c.name)}</a>`,
       esc(c.email || '—'),
       esc(c.phone || '—'),
       esc(c.company || '—'),
