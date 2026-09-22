@@ -11,6 +11,7 @@ class Contact(db.Model):
     email = db.Column(db.String(120), index=True)
     phone = db.Column(db.String(30))
     company = db.Column(db.String(120), index=True)
+    industry = db.Column(db.String(120), default="Diversified", nullable=False)
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(
@@ -35,6 +36,7 @@ class Contact(db.Model):
             "email": self.email,
             "phone": self.phone,
             "company": self.company,
+            "industry": self.industry,
             "notes": self.notes,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
