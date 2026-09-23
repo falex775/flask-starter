@@ -26,7 +26,7 @@
      search results now open the matched record, edit modal works for
      records outside the loaded page (fetches the single record), dead code
      after redirects removed, modal gets role="dialog"/Escape/focus.
-====================================================================== -->
+ ====================================================================== -->
 <style>
   :root{
     --bg:#f4f6fb; --card:#fff; --ink:#1f2733; --muted:#6b7686;
@@ -153,7 +153,7 @@
   .dot{width:9px; height:9px; border-radius:3px; display:inline-block;}
 
   /* ================= FOOTER ================= */
-  .site-footer{max-width:1500px; margin:40px auto 0; padding:22px; border-top:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:20px; color:var(--muted); font-size:13px;}
+  .site-footer{max-width:1500px; margin:40px auto 0; padding:22px; border-top:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:20px; color:var(--muted);}
   .footer-links{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
   .footer-links a{padding:7px 10px; border-radius:8px; font-weight:600;}
   .footer-links a:hover{background:var(--card); color:var(--ink);}
@@ -212,7 +212,7 @@
           <div class="body chart-body"><div class="chartbox" id="histChart"></div></div>
         </div>
         <div class="widget">
-          <div class="head"><h2>Deal Value by Contact</h2><span class="sub">% of total value</span></div>
+          <div class="head"><h2>Deal Value by Industry</h2><span class="sub">% of total value</span></div>
           <div class="body chart-body"><div class="chartbox" id="pieChart"></div></div>
         </div>
       </div>
@@ -241,7 +241,7 @@
   </section>
 
   <!-- ===== STATIC PAGES ===== -->
-  <section class="page" id="page-contact"><div class="listhead"><h1>Contact us</h1></div><div class="widget"><div class="listrows"><div class="row rowexp"><div><div class="row-main-t">📧 support@nimbuscrm.example</div><div class="row-sub">For support & billing</div></div><div class="row-right"><span class="amt">Mon–Fri</span></div></div><div class="row rowexp"><div><div class="row-main-t">📞 +1 (555) 010-2030</div><div class="row-sub">Sales line</div></div><div class="row-right"><span class="amt">9am–6pm</span></div></div></div></div></section>
+  <section class="page" id="page-contact"><div class="listhead"><h1>Contact us</h1></div><div class="widget"><div class="listrows"><div class="row rowexp"><div><div class="row-main-t">📧 support@nimbuscrm.example</div><div class="row-sub">For account and product support</div></div></div><div class="row rowexp"><div><div class="row-main-t">☎️ +1 (415) 555-0182</div><div class="row-sub">Mon–Fri · 9am–6pm PT</div></div></div></div></div></section>
 
   <section class="page" id="page-forums"><div class="listhead"><h1>Community Forums</h1></div><div class="widget"><div class="listrows">
     <div class="row rowexp" style="border-color:var(--brand);"><div><div class="row-main-t">How do I bulk import contacts?</div><div class="row-sub">3 replies · Sales workflows · 2d ago</div></div></div>
@@ -591,6 +591,7 @@ function buildFormHTML(type, rec, isEdit){
       <div class="field"><label>Email</label><input name="email" type="email" value="${esc(rec.email)}" /></div>
       <div class="field"><label>Phone</label><input name="phone" value="${esc(rec.phone)}" /></div>
       <div class="field"><label>Company</label><input name="company" value="${esc(rec.company)}" /></div>
+      <div class="field"><label>Industry</label><input name="industry" value="${esc(rec.industry || '')}" /></div>
       <div class="field"><label>Notes</label><textarea name="notes" rows="3">${esc(rec.notes)}</textarea></div>
       <div class="mfoot"><button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" type="submit">${submit || 'Add contact'}</button></div>`;
@@ -649,6 +650,7 @@ $('modalForm').addEventListener('submit', async e => {
         email: body.email || null,
         phone: body.phone || null,
         company: body.company || null,
+        industry: body.industry || null,
         notes: body.notes || null
       }, editingId);
     } else if(modalType === 'deal'){
@@ -794,7 +796,7 @@ function donutSVG(entries){
   const legend = entries.slice(0, 8).map((e, i) =>
     `<span class="lg"><span class="dot" style="background:${avColor('cp' + i)}"></span>${esc(e[0])} · ${Math.round(e[1]/total*100)}%</span>`
   ).join('');
-  return `<svg viewBox="0 0 140 140" width="100%" style="max-height:150px" role="img" aria-label="Deal value by contact">`
+  return `<svg viewBox="0 0 140 140" width="100%" style="max-height:150px" role="img" aria-label="Deal value by industry">`
        + `<g transform="rotate(-90 70 70)">${segs}</g>`
        + `<text x="70" y="75" text-anchor="middle" font-size="12" font-weight="800" fill="#1f2733">${esc(fmtMoney(total))}</text></svg>`
        + `<div class="lgwrap">${legend}</div>`;
@@ -812,8 +814,9 @@ function renderCharts(deals){
 
   const totals = {};
   deals.forEach(d => {
-    const nm = contactName(d.contact_id) || 'No contact';
-    totals[nm] = (totals[nm] || 0) + (Number(d.value) || 0);
+    const contact = state.contacts.find(c => String(c.id) === String(d.contact_id));
+    const industry = (contact && contact.industry) || 'Unspecified';
+    totals[industry] = (totals[industry] || 0) + (Number(d.value) || 0);
   });
   const entries = Object.entries(totals).filter(([,v]) => v > 0).sort((a,b) => b[1] - a[1]);
   $('pieChart').innerHTML = donutSVG(entries);
